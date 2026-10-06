@@ -19,7 +19,7 @@ export class GoogleStreetViewResolver implements PanoResolver {
   constructor(
     private readonly apiKey: string,
     private readonly fetchImpl: typeof fetch = fetch,
-    private readonly timeoutMs = 6000,
+    private readonly timeoutMs = 4000,
   ) {}
 
   async resolve(point: LatLng, radiusMeters: number): Promise<ResolvedPano | null> {
@@ -38,12 +38,31 @@ export class GoogleStreetViewResolver implements PanoResolver {
       }
       const body = (await response.json()) as MetadataResponse;
       if (body.status === 'ZERO_RESULTS' || body.status === 'NOT_FOUND') return null;
-      if (body.status !== 'OK' || !body.pano_id || !body.location) {
-        throw new Error(`Street View metadata error: ${body.status}${body.error_message ? ` — ${body.error_message}` : ''}`);
-      }
+      if (body.status !== 'OK' || !body.pano_id || !body.location) throw new Error(describeStatus(body.status, body.error_message));
       return { panoId: body.pano_id, location: { lat: body.location.lat, lng: body.location.lng } };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') throw new Error(`Google n'a pas répondu en ${Math.round(this.timeoutMs / 1000)} s`);
+      throw error;
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+/** Turns a Google status into something the host can act on (phase 3 §5). */
+export function describeStatus(status: string, detail?: string): string {
+  const suffix = detail ? ` — ${detail}` : '';
+  switch (status) {
+    case 'REQUEST_DENIED':
+      return `clé Google refusée (REQUEST_DENIED) : vérifie GOOGLE_MAPS_SERVER_KEY, son API activée et ses restrictions${suffix}`;
+    case 'OVER_QUERY_LIMIT':
+    case 'OVER_DAILY_LIMIT':
+      return `quota Google dépassé (${status})${suffix}`;
+    case 'INVALID_REQUEST':
+      return `requête Google invalide (INVALID_REQUEST)${suffix}`;
+    case 'UNKNOWN_ERROR':
+      return `erreur Google temporaire (UNKNOWN_ERROR), réessaie${suffix}`;
+    default:
+      return `Street View metadata : ${status}${suffix}`;
   }
 }

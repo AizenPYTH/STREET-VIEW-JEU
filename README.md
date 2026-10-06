@@ -67,12 +67,25 @@ Aucune clé n'est jamais écrite dans le code. La clé navigateur est publique p
 
 ## Clés Google Maps
 
-1. Crée un projet sur [Google Cloud Console](https://console.cloud.google.com/) et active la facturation.
-2. Active **Maps JavaScript API** et **Street View Static API**.
-3. Crée deux clés :
-   - **Serveur** (`GOOGLE_MAPS_SERVER_KEY`) : restriction par adresse IP, API autorisée : Street View Static API. Le serveur n'appelle que l'endpoint *metadata*, gratuit.
-   - **Navigateur** (`GOOGLE_MAPS_BROWSER_KEY`) : restriction par référent HTTP (ton domaine), API autorisée : Maps JavaScript API. Les chargements Street View dynamiques sont facturés par Google au‑delà du quota gratuit mensuel.
-4. En développement, une seule clé sans restriction dans `GOOGLE_MAPS_API_KEY` suffit.
+Deux clés distinctes, parce qu'elles vivent dans deux endroits différents et ne doivent pas avoir les mêmes droits :
+
+| | Clé **serveur** `GOOGLE_MAPS_SERVER_KEY` | Clé **navigateur** `GOOGLE_MAPS_BROWSER_KEY` |
+|---|---|---|
+| Où elle vit | Variable d'environnement du serveur, jamais envoyée au client | Envoyée à chaque joueur par `/api/config`, visible dans le navigateur |
+| Ce qu'elle appelle | `maps.googleapis.com/maps/api/streetview/metadata` pour transformer un point aléatoire en vrai panorama (endpoint **gratuit**) | Maps JavaScript API pour afficher et naviguer dans le panorama (facturé au‑delà du quota gratuit mensuel) |
+| API à activer | **Street View Static API** | **Maps JavaScript API** |
+| Restriction recommandée | **Adresse IP** du serveur (une clé restreinte par référent est refusée côté serveur) | **Référent HTTP** = ton domaine (`https://cityguess.example.com/*`) |
+| Si elle fuit | Un tiers peut faire des requêtes metadata gratuites avec ton quota | Un tiers ne peut l'utiliser que depuis ton domaine |
+
+Étapes :
+
+1. [Google Cloud Console](https://console.cloud.google.com/) → projet → facturation activée (obligatoire pour Maps Platform, même dans le quota gratuit).
+2. APIs & Services → activer **Maps JavaScript API** et **Street View Static API**.
+3. Identifiants → deux clés avec les restrictions ci‑dessus.
+4. `.env` : `STREET_VIEW_PROVIDER=google`, `GOOGLE_MAPS_SERVER_KEY=…`, `GOOGLE_MAPS_BROWSER_KEY=…`.
+5. En développement local uniquement, une seule clé sans restriction dans `GOOGLE_MAPS_API_KEY` remplit les deux rôles.
+
+Validation réelle (à faire avec tes clés, voir [Tests](#tests)) : `scripts/validate-streetview.mjs` et `e2e/google.spec.ts`.
 
 Les cartes de guess et de révélation utilisent Leaflet avec les tuiles CARTO Voyager (gratuites, attribution OpenStreetMap/CARTO conservée) : aucune clé nécessaire.
 
@@ -159,7 +172,7 @@ Points clés :
 
 ## Déploiement
 
-Le plus simple : **un seul service Node** qui sert l'API, les websockets et le client compilé.
+### Serveur + client (recommandé : un seul service)
 
 ```bash
 npm run build
@@ -167,9 +180,51 @@ NODE_ENV=production PORT=3000 STREET_VIEW_PROVIDER=google \
 GOOGLE_MAPS_SERVER_KEY=… GOOGLE_MAPS_BROWSER_KEY=… npm start
 ```
 
-Un `Dockerfile` est fourni (Fly.io, Railway, Render, VPS…). Le serveur garde l'état des rooms en mémoire : **une seule instance** (pas de scaling horizontal sans adaptateur Socket.IO partagé). Websockets requis. HTTPS obligatoire pour l'installation PWA, `navigator.share` et le presse‑papiers.
+- Le `Dockerfile` construit tout et lance `node server/dist/index.js` (Fly.io, Railway, Render, VPS…).
+- **Une seule instance** : l'état des rooms est en mémoire (pas d'adaptateur Socket.IO multi‑instances). Un redéploiement termine les parties en cours.
+- **HTTPS obligatoire** : installation PWA, `navigator.share`, presse‑papiers et vibrations l'exigent. Un domaine + certificat (Let's Encrypt via la plateforme).
+- **WebSocket** : le client tente `websocket` puis `polling`. Derrière un reverse proxy, transmettre l'upgrade :
 
-Client hébergé séparément (Vercel/Netlify) : build avec `VITE_SERVER_URL=https://api.exemple.com` et `CORS_ORIGIN=https://app.exemple.com` côté serveur.
+```nginx
+location / {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+  proxy_read_timeout 120s;
+}
+```
+
+  Sur Fly/Railway/Render, les websockets passent sans configuration. Pas besoin de sticky sessions tant qu'il n'y a qu'une instance.
+- **PWA** : `manifest.webmanifest` + icônes sont servis par le serveur ; `index.html` est servi avec `Cache-Control: no-cache`, les assets Vite sont hashés (cache long). Pas de service worker (volontaire : un jeu temps réel ne doit pas servir un client périmé).
+
+### Client séparé (optionnel)
+
+Build avec `VITE_SERVER_URL=https://api.exemple.com` (Vercel/Netlify) et `CORS_ORIGIN=https://app.exemple.com` côté serveur. Les deux origines doivent être en HTTPS.
+
+### Base de données
+
+Optionnelle. Créer un projet Supabase (ou tout Postgres), appliquer `db/migrations/*.sql` (`npm run db:migrate -w server`), fournir `DATABASE_URL` (chaîne de connexion directe ou pooler, **jamais** la clé anon ni la service role key dans le client) et `DATABASE_SSL=require`.
+
+### Variables en production
+
+`NODE_ENV=production`, `PORT`, `STREET_VIEW_PROVIDER=google`, `GOOGLE_MAPS_SERVER_KEY`, `GOOGLE_MAPS_BROWSER_KEY`, optionnellement `DATABASE_URL` + `DATABASE_SSL`, et `CORS_ORIGIN` si le client est sur une autre origine. Aucune clé ne doit être commitée : `.env` est ignoré par git, `.env.example` ne contient que des champs vides.
+
+## Dépannage
+
+| Symptôme | Cause probable | Remède |
+|---|---|---|
+| « STREET_VIEW_PROVIDER=google requires … » au démarrage | clés manquantes | renseigner les deux clés ou `GOOGLE_MAPS_API_KEY`, ou `STREET_VIEW_PROVIDER=mock` |
+| Lobby : « clé Google refusée (REQUEST_DENIED) » | clé serveur sans Street View Static API, ou restreinte par référent | activer l'API, restreindre par IP |
+| Lobby : « quota Google dépassé » | quota metadata ou facturation | vérifier la facturation / les quotas dans la console |
+| Lobby : « Google met trop de temps à répondre » | réseau sortant du serveur lent ou bloqué | vérifier l'accès à `maps.googleapis.com` depuis le serveur |
+| Lobby : « Impossible de trouver assez de lieux » | couverture Street View faible dans les zones | lancer `scripts/validate-streetview.mjs <ville>` et déplacer les zones |
+| Manche : « La vue rue n'a pas chargé » | clé navigateur sans Maps JavaScript API, référent non autorisé, ou réseau du joueur | console du navigateur (message Google), vérifier référent `https://domaine/*` |
+| « Connexion perdue » en boucle | websocket bloqué par le proxy | configuration nginx ci‑dessus, ou vérifier que `/socket.io/` atteint le serveur |
+| Les joueurs ne passent pas « Prêt » | la vue rue ne se charge pas sur leur appareil | idem « La vue rue n'a pas chargé » |
+| Partage sans image | navigateur sans partage de fichiers | l'image est téléchargée à la place |
+| `npm test` échoue sur Postgres | `TEST_DATABASE_URL` pointe vers une base inaccessible | lancer Postgres ou retirer la variable (le test est ignoré sans elle) |
 
 ## Ajouter une ville
 
@@ -178,6 +233,10 @@ Ajoute une entrée dans `packages/shared/src/cities.ts` : nom, pays, drapeau, ce
 ## Phase 2 — game feel
 
 Le document [`docs/PHASE2_HANDOFF.md`](docs/PHASE2_HANDOFF.md) décrit l'audit, la révélation en suspense (joueurs du plus loin au plus proche, gagnant de manche), les scores animés, les dépassements et séries, les quatre paliers du timer, l'onboarding, les états vides, l'image de partage 1080×1920 et la vérification d'équilibre du barème.
+
+## Statut de release
+
+**READY — GOOGLE VALIDATION REQUIRED.** Tout est testé sauf l'exécution réelle du fournisseur Google (aucune clé disponible pendant le développement). Checklist et détails dans [`docs/FINAL_HANDOFF.md`](docs/FINAL_HANDOFF.md).
 
 ## Limites connues
 

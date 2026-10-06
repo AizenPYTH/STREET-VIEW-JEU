@@ -26,7 +26,13 @@ export interface PickLocationsOptions {
   rng?: () => number;
   /** Locations to stay away from (e.g. the previous game in the same room). */
   exclude?: readonly LatLng[];
+  /** Overall time budget; a slow or unreachable provider fails fast instead of freezing the lobby. */
+  deadlineMs?: number;
+  now?: () => number;
 }
+
+/** Default time budget for the whole selection (the client gives up waiting for the ack after 12 s). */
+export const DEFAULT_PICK_DEADLINE_MS = 9000;
 
 /** Search radius handed to the Street View provider around each sampled point. */
 const SNAP_RADIUS_M = 150;
@@ -56,21 +62,26 @@ function shuffle<T>(items: readonly T[], rng: () => number): T[] {
  */
 export async function pickLocations(options: PickLocationsOptions): Promise<ResolvedLocation[]> {
   const { city, difficulty } = options;
+  const now = options.now ?? Date.now;
+  const startedAt = now();
+  const budget = { deadline: startedAt + (options.deadlineMs ?? DEFAULT_PICK_DEADLINE_MS), now };
   try {
-    return await pickFromZones(options, zonesForDifficulty(city, difficulty));
+    return await pickFromZones({ ...options, ...budget }, zonesForDifficulty(city, difficulty));
   } catch (error) {
+    if (error instanceof GameError && error.code === 'LOCATIONS_UNAVAILABLE' && now() >= budget.deadline) throw error;
     // Street View coverage can be thin in the zones of one difficulty: fall back to the whole city
     // rather than blocking the game (phase 2 §41). Exclusions are relaxed too, they are only a nicety.
     const allZones = city.zones;
     if (allZones.length === zonesForDifficulty(city, difficulty).length && !options.exclude?.length) throw error;
-    return pickFromZones({ ...options, exclude: [] }, allZones);
+    return pickFromZones({ ...options, ...budget, exclude: [] }, allZones);
   }
 }
 
-async function pickFromZones(options: PickLocationsOptions, candidateZones: readonly CityZone[]): Promise<ResolvedLocation[]> {
-  const { city, count, resolver } = options;
+async function pickFromZones(options: PickLocationsOptions & { deadline: number; now: () => number }, candidateZones: readonly CityZone[]): Promise<ResolvedLocation[]> {
+  const { city, count, resolver, deadline, now } = options;
   const rng = options.rng ?? Math.random;
   const exclude = options.exclude ?? [];
+  const timedOut = (): boolean => now() >= deadline;
   const zones = shuffle(candidateZones, rng);
   if (zones.length === 0) throw new GameError('LOCATIONS_UNAVAILABLE', `${city.name} has no zones configured`);
 
@@ -86,6 +97,7 @@ async function pickFromZones(options: PickLocationsOptions, candidateZones: read
     accepted: readonly ResolvedLocation[],
   ): Promise<ResolvedLocation | null> => {
     for (let attempt = 0; attempt < MAX_ATTEMPTS_PER_ROUND; attempt++) {
+      if (timedOut()) return null;
       const zone = zones[(zoneOffset + attempt) % zones.length] as CityZone;
       const point = randomPointInRadius(zone.center, zone.radiusMeters, rng);
       const pano = await resolver.resolve(point, SNAP_RADIUS_M);
@@ -112,7 +124,9 @@ async function pickFromZones(options: PickLocationsOptions, candidateZones: read
     if (!replacement) {
       throw new GameError(
         'LOCATIONS_UNAVAILABLE',
-        `Impossible de trouver assez de lieux Street View à ${city.name}. Essaie une autre ville ou difficulté.`,
+        timedOut()
+          ? `Google met trop de temps à répondre pour ${city.name}. Réessaie dans un instant.`
+          : `Impossible de trouver assez de lieux Street View à ${city.name}. Essaie une autre ville ou difficulté.`,
       );
     }
     accepted.push(replacement);

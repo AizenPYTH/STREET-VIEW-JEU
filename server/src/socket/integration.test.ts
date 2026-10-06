@@ -190,6 +190,19 @@ describe('socket transport', () => {
     expect(afterLeave.players.filter((p) => !p.left).map((p) => p.name)).toEqual(['Alex', 'Sam', 'Adam']);
   });
 
+  it('survives malformed payloads and events without acknowledgement', async () => {
+    const s = await client('malformed-token-1234567890abcdef');
+    await expect(request(s, (ack) => s.emit('room:create', 'not-an-object' as never, ack))).rejects.toThrow(/INVALID_INPUT/);
+    await expect(request(s, (ack) => s.emit('room:create', { name: 'x'.repeat(40), avatar: 'diamond' }, ack))).rejects.toThrow(/INVALID_INPUT/);
+    await expect(request(s, (ack) => s.emit('room:join', { code: 12345, name: 'Bob', avatar: 'diamond' } as never, ack))).rejects.toThrow(/INVALID_INPUT/);
+    await expect(request(s, (ack) => s.emit('game:submitGuess', { position: { lat: 999, lng: 0 } }, ack))).rejects.toThrow(/INVALID_INPUT|NOT_IN_ROOM/);
+    // No ack callback at all: the server must ignore it and stay responsive.
+    (s as unknown as { emit: (...a: unknown[]) => void }).emit('room:create', { name: 'NoAck', avatar: 'diamond' });
+    (s as unknown as { emit: (...a: unknown[]) => void }).emit('game:start');
+    const created = await request<RoomJoined>(s, (ack) => s.emit('room:create', { name: 'Still', avatar: 'diamond' }, ack));
+    expect(created.code).toMatch(/^[A-Z2-9]{5}$/);
+  });
+
   it('returns clear errors for unknown rooms and bad input', async () => {
     const s = await client('errors-token-1234567890abcdef');
     await expect(request(s, (ack) => s.emit('room:join', { code: 'ZZZZZ', name: 'Xavier', avatar: 'diamond' }, ack))).rejects.toThrow(/ROOM_NOT_FOUND/);

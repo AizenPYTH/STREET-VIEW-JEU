@@ -486,3 +486,128 @@ describe('rematch', () => {
     expect(eventTypes(h)).toContain('rematchRequested');
   });
 });
+
+describe('release bug bash', () => {
+  const phases = ['waiting', 'round', 'guessing', 'revealing', 'results'] as const;
+
+  for (const phase of phases) {
+    it(`host leaving during "${phase}" hands over to a connected player who can keep the game going`, async () => {
+      const h = createHarness();
+      const [host, b, c] = addPlayers(h, ['Host', 'Bea', 'Cyr']);
+      h.room.updateSettings(host!.id, { rounds: 3 });
+      if (phase !== 'waiting') {
+        await startAndEnterRound(h, host!.id);
+        if (phase === 'guessing') h.clock.advance(30_000);
+        if (phase === 'revealing' || phase === 'results') {
+          for (const p of [host, b, c]) h.room.submitGuess(p!.id, h.locations[0]!.location);
+          if (phase === 'results') h.clock.advance(TIMINGS.revealAlignMs + revealDurationMs(3));
+        }
+      }
+      expect(h.room.phase).toBe(phase);
+      h.room.leave(host!.id);
+      expect(h.room.hostId).toBe(b?.id);
+      expect(h.room.players.get(b!.id)?.isHost).toBe(true);
+      expect(h.room.phase).toBe(phase === 'waiting' ? 'waiting' : phase);
+      // The new host has the host powers.
+      if (phase === 'results') {
+        h.room.nextRound(b!.id);
+        expect(h.room.phase).toBe('round');
+        expect(h.room.currentRoundIndex).toBe(1);
+      }
+      if (phase === 'waiting') {
+        await h.room.startGame(b!.id);
+        expect(h.room.phase).toBe('starting');
+      }
+      expect(() => h.room.nextRound(c!.id)).toThrow(/hôte|révélation/);
+    });
+  }
+
+  it('a player who drops mid‑guess comes back as the same player with the guess kept, no duplicates', async () => {
+    const h = createHarness();
+    const [a, b, c, d] = addPlayers(h, ['Ana', 'Bob', 'Cat', 'Dan']);
+    await startAndEnterRound(h, a!.id);
+    h.room.submitGuess(b!.id, { lat: 48.86, lng: 2.35 });
+    h.room.markDisconnected(b!.id);
+    h.clock.advance(8000);
+    const back = h.room.rejoin(b!.token);
+    expect(back.id).toBe(b?.id);
+    expect(h.room.players.size).toBe(4);
+    const snap = h.room.snapshotFor(b!.id);
+    expect(snap.phase).toBe('round');
+    expect(snap.round?.number).toBe(1);
+    expect(snap.yourGuess).toEqual({ lat: 48.86, lng: 2.35 });
+    expect(snap.players.filter((p) => p.name === 'Bob')).toHaveLength(1);
+    expect(snap.players.find((p) => p.id === b!.id)?.hasGuessed).toBe(true);
+    for (const p of [a, c, d]) h.room.submitGuess(p!.id, h.locations[0]!.location);
+    expect(h.room.phase).toBe('revealing');
+    expect(h.room.snapshotFor(b!.id).round?.reveal?.results.find((r) => r.playerId === b!.id)?.auto).toBe(false);
+  });
+
+  it('rematch leaks nothing from the previous game', async () => {
+    const h = createHarness();
+    const [host, guest] = addPlayers(h, ['Host', 'Guest']);
+    h.room.updateSettings(host!.id, { rounds: 3 });
+    await startAndEnterRound(h, host!.id);
+    for (let r = 0; r < 3; r++) {
+      h.room.submitGuess(host!.id, h.locations[r]!.location);
+      h.room.submitGuess(guest!.id, offsetLatLng(h.locations[r]!.location, 3000, 1));
+      skipRevealAndResults(h);
+      if (r < 2) enterExploration(h);
+    }
+    expect(h.room.phase).toBe('finished');
+    expect(h.room.snapshotFor(host!.id).final?.winnerIds).toEqual([host?.id]);
+    await h.room.rematch(host!.id, false);
+    const beat = h.room.snapshotFor(guest!.id);
+    expect(beat.phase).toBe('starting');
+    expect(beat.final).toBeNull();
+    expect(beat.round).toBeNull();
+    expect(beat.yourGuess).toBeNull();
+    expect(beat.players.every((p) => p.totalScore === 0 && !p.hasGuessed)).toBe(true);
+    h.clock.advance(TIMINGS.rematchDelayMs);
+    enterExploration(h);
+    const round = h.room.snapshotFor(guest!.id);
+    expect(round.round?.number).toBe(1);
+    expect(round.round?.reveal).toBeNull();
+    expect(round.gameNumber).toBe(2);
+    h.room.submitGuess(host!.id, h.locations[0]!.location);
+    h.room.submitGuess(guest!.id, h.locations[0]!.location);
+    const reveal = h.room.snapshotFor(guest!.id).round?.reveal;
+    expect(reveal?.standings.every((s) => s.previousRank === null && s.previousStreak === 0)).toBe(true);
+    expect(reveal?.results).toHaveLength(2);
+    expect(h.room.players.get(host!.id)?.maxStreak).toBe(1);
+  });
+
+  it('refuses a double start and a double rematch', async () => {
+    const h = createHarness();
+    const [host] = addPlayers(h, ['Host']);
+    const first = h.room.startGame(host!.id);
+    await expect(h.room.startGame(host!.id)).rejects.toThrow(/déjà commencé/);
+    await first;
+    h.clock.advance(TIMINGS.startingLogoMs);
+    enterExploration(h);
+    h.room.submitGuess(host!.id, h.locations[0]!.location);
+    for (let r = 0; r < 5; r++) {
+      skipRevealAndResults(h);
+      if (h.room.phase === 'round') {
+        enterExploration(h);
+        h.room.submitGuess(host!.id, h.locations[r + 1]!.location);
+      }
+    }
+    expect(h.room.phase).toBe('finished');
+    const rematch = h.room.rematch(host!.id, false);
+    await expect(h.room.rematch(host!.id, false)).rejects.toThrow(/pas finie/);
+    await rematch;
+    expect(h.room.gameNumber).toBe(2);
+  });
+
+  it('a guess arriving right at the deadline is refused, and the reveal happens exactly once', async () => {
+    const h = createHarness();
+    const [host, guest] = addPlayers(h, ['Host', 'Guest']);
+    await startAndEnterRound(h, host!.id);
+    h.clock.advance(30_000 + TIMINGS.guessMs);
+    expect(h.room.phase).toBe('revealing');
+    expect(() => h.room.submitGuess(guest!.id, { lat: 43.3, lng: 5.37 })).toThrow(/Trop tard/);
+    expect(eventTypes(h).filter((t) => t === 'roundRevealed')).toHaveLength(1);
+    expect(h.room.currentRound?.guesses.size).toBe(2); // two auto guesses, no duplicates
+  });
+});

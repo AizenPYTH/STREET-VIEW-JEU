@@ -102,3 +102,56 @@ describe('GoogleStreetViewResolver', () => {
     expect(seen).toContain('key=KEY123');
   });
 });
+
+describe('pickLocations time budget', () => {
+  it('fails fast with a clear message when the provider is too slow', async () => {
+    let fakeNow = 0;
+    const slow: PanoResolver = {
+      id: 'mock',
+      resolve: async () => {
+        fakeNow += 3000; // every call "takes" 3 s
+        return null;
+      },
+    };
+    const city = requireCity('paris');
+    await expect(pickLocations({ city, difficulty: 'normal', count: 5, resolver: slow, deadlineMs: 9000, now: () => fakeNow })).rejects.toThrow(/trop de temps/);
+    expect(fakeNow).toBeLessThan(9000 + 5 * 3000 + 1);
+  });
+
+  it('still succeeds when the provider is fast', async () => {
+    let fakeNow = 0;
+    const resolver = new MockStreetViewResolver();
+    const timed: PanoResolver = {
+      id: 'mock',
+      resolve: (p, r) => {
+        fakeNow += 100;
+        return resolver.resolve(p, r);
+      },
+    };
+    const picked = await pickLocations({ city: requireCity('paris'), difficulty: 'normal', count: 5, resolver: timed, deadlineMs: 9000, now: () => fakeNow, rng: seeded(5) });
+    expect(picked).toHaveLength(5);
+  });
+});
+
+describe('Google error messages', () => {
+  const fakeFetch = (body: unknown): typeof fetch => (async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch;
+
+  it('explains a refused key and an exceeded quota', async () => {
+    await expect(new GoogleStreetViewResolver('k', fakeFetch({ status: 'REQUEST_DENIED', error_message: 'API key not valid' })).resolve({ lat: 1, lng: 2 }, 100)).rejects.toThrow(
+      /clé Google refusée.*API key not valid/,
+    );
+    await expect(new GoogleStreetViewResolver('k', fakeFetch({ status: 'OVER_QUERY_LIMIT' })).resolve({ lat: 1, lng: 2 }, 100)).rejects.toThrow(/quota Google dépassé/);
+  });
+
+  it('turns a timeout into a readable error', async () => {
+    const never: typeof fetch = ((_input: unknown, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const e = new Error('aborted');
+          e.name = 'AbortError';
+          reject(e);
+        });
+      })) as typeof fetch;
+    await expect(new GoogleStreetViewResolver('k', never, 20).resolve({ lat: 1, lng: 2 }, 100)).rejects.toThrow(/n'a pas répondu/);
+  });
+});
