@@ -194,7 +194,7 @@ describe('game flow', () => {
     expect(final.ranking).toHaveLength(4);
     expect(final.winnerIds).toEqual([adam?.id]);
     expect(final.stats.find((s) => s.playerId === adam!.id)?.bestGuessMeters).toBeCloseTo(5, 0);
-    expect(final.stats.find((s) => s.playerId === adam!.id)?.maxStreak).toBe(1);
+    expect(final.stats.find((s) => s.playerId === adam!.id)?.maxStreak).toBe(2); // tied best in round 2, best in round 3
     expect(final.stats.find((s) => s.playerId === alex!.id)?.bestGuessMeters).toBeCloseTo(10, 0);
     expect(final.stats.find((s) => s.playerId === alex!.id)?.bestRoundPoints).toBe(alexR1);
     expect(eventTypes(h)).toContain('gameFinished');
