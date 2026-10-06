@@ -1,26 +1,25 @@
 import L from 'leaflet';
 import { useEffect, useRef } from 'react';
 import type { City, LatLng } from '@cityguess/shared';
-import { createMap, playerPinIcon } from './leafletUtils';
+import { createMap, guessMarkerIcon } from './leafletUtils';
 import { playSound } from '../../services/sound';
 import { haptic } from '../../services/haptics';
 
 interface GuessMapProps {
   city: City;
   marker: LatLng | null;
-  onMarkerChange(position: LatLng): void;
+  onPlace(position: LatLng): void;
   locked: boolean;
-  color: string;
   avatar: string;
 }
 
-/** Full‑screen Leaflet map where the player drops and drags their guess marker. */
-export function GuessMap({ city, marker, onMarkerChange, locked, color, avatar }: GuessMapProps) {
+/** Map card: a tap places or moves the marker (§19). Pinch/pan are native. */
+export function GuessMap({ city, marker, onPlace, locked, avatar }: GuessMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
-  const onChangeRef = useRef(onMarkerChange);
-  onChangeRef.current = onMarkerChange;
+  const onPlaceRef = useRef(onPlace);
+  onPlaceRef.current = onPlace;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
 
@@ -34,22 +33,24 @@ export function GuessMap({ city, marker, onMarkerChange, locked, color, avatar }
         [s, w],
         [n, e],
       ],
-      { padding: [12, 12] },
+      { padding: [8, 8], animate: false },
     );
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
     map.on('click', (event: L.LeafletMouseEvent) => {
       if (lockedRef.current) return;
-      playSound('click');
-      haptic('light');
-      onChangeRef.current({ lat: event.latlng.lat, lng: event.latlng.lng });
+      playSound('marker');
+      haptic('selection');
+      onPlaceRef.current({ lat: event.latlng.lat, lng: event.latlng.lng });
     });
     mapRef.current = map;
-    const onResize = (): void => map.invalidateSize();
-    window.addEventListener('resize', onResize);
-    const raf = requestAnimationFrame(() => map.invalidateSize());
+    const resize = (): void => {
+      map.invalidateSize();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    const raf = requestAnimationFrame(resize);
     return () => {
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
+      observer.disconnect();
       map.remove();
       mapRef.current = null;
       markerRef.current = null;
@@ -65,24 +66,12 @@ export function GuessMap({ city, marker, onMarkerChange, locked, color, avatar }
       return;
     }
     if (!markerRef.current) {
-      const m = L.marker([marker.lat, marker.lng], {
-        icon: playerPinIcon(color, avatar, { draggable: !locked, drop: true }),
-        draggable: !locked,
-        keyboard: false,
-      }).addTo(map);
-      m.on('dragend', () => {
-        const p = m.getLatLng();
-        haptic('light');
-        onChangeRef.current({ lat: p.lat, lng: p.lng });
-      });
-      markerRef.current = m;
+      markerRef.current = L.marker([marker.lat, marker.lng], { icon: guessMarkerIcon(avatar, { ring: true }), interactive: false, keyboard: false }).addTo(map);
     } else {
       markerRef.current.setLatLng([marker.lat, marker.lng]);
-      markerRef.current.setIcon(playerPinIcon(color, avatar, { draggable: !locked }));
-      if (locked) markerRef.current.dragging?.disable();
-      else markerRef.current.dragging?.enable();
+      markerRef.current.setIcon(guessMarkerIcon(avatar, { ring: !locked }));
     }
-  }, [marker, locked, color, avatar]);
+  }, [marker, locked, avatar]);
 
-  return <div ref={containerRef} className="map" data-testid="guess-map" />;
+  return <div ref={containerRef} className="guess__map" data-testid="guess-map" />;
 }

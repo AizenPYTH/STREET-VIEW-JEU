@@ -1,40 +1,20 @@
-import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect } from 'react';
-import { getCity, type RoomSnapshot } from '@cityguess/shared';
-import { useCountdown } from '../hooks/useCountdown';
-import { playSound } from '../services/sound';
-import { haptic } from '../services/haptics';
+import type { RoomSnapshot } from '@cityguess/shared';
 
+/** Logo beat before round 1, or the "Revanche demandée par X" beat (§21, §33). */
 export function StartingScreen({ snapshot }: { snapshot: RoomSnapshot }) {
-  const { seconds } = useCountdown(snapshot.phaseEndsAt, 100);
-  const city = getCity(snapshot.settings.cityId);
-  useEffect(() => {
-    if (seconds > 0) {
-      playSound('countdown');
-      haptic('countdown');
-    }
-  }, [seconds]);
   return (
-    <div className="screen bg-aurora centered starting" data-testid="starting">
-      <span className="eyebrow">Get ready</span>
-      <AnimatePresence mode="popLayout">
-        <motion.span
-          key={seconds}
-          className="starting__number"
-          initial={{ scale: 1.6, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.6, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 24 }}
-        >
-          {seconds > 0 ? seconds : 'GO'}
-        </motion.span>
-      </AnimatePresence>
-      <p className="starting__city">
-        <span>{city?.flag}</span> {city?.name}
-      </p>
-      <p className="muted">
-        {snapshot.settings.rounds} rounds · {snapshot.settings.exploreSeconds}s to explore
-      </p>
+    <div className="screen screen--deep starting" data-testid="starting">
+      <div className="screen__center">
+        {snapshot.rematchBy ? (
+          <>
+            <span className="t-label cg-pop">Revanche</span>
+            <p className="starting__by cg-up">Revanche demandée par {snapshot.rematchBy}</p>
+            <p className="t-body">Nouveaux lieux, mêmes joueurs.</p>
+          </>
+        ) : (
+          <span className="intro__logo">CITYGUESS</span>
+        )}
+      </div>
     </div>
   );
 }

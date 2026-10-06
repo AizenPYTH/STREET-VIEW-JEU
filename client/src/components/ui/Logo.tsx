@@ -1,14 +1,20 @@
-export function Logo({ size = 'lg' }: { size?: 'sm' | 'lg' }) {
-  return (
-    <span className={`logo logo--${size}`} aria-label="CityGuess">
-      <svg className="logo__pin" viewBox="0 0 512 512" aria-hidden="true">
-        <path d="M256 92c-62 0-112 50-112 112 0 84 112 216 112 216s112-132 112-216c0-62-50-112-112-112z" fill="currentColor" />
-        <circle cx="256" cy="204" r="46" fill="#0A0D14" />
-        <circle cx="256" cy="204" r="20" fill="currentColor" />
-      </svg>
-      <span className="logo__word">
-        CITY<span className="logo__accent">GUESS</span>
+export function Logo({ inline = false }: { inline?: boolean }) {
+  if (inline) {
+    return (
+      <span className="logo" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }} aria-label="CityGuess">
+        <span className="logo__mark logo__mark--inline" />
+        <span className="logo__word logo__word--inline">CITYGUESS</span>
       </span>
-    </span>
+    );
+  }
+  return (
+    <div className="logo" aria-label="CityGuess">
+      <span className="logo__mark cg-pop" />
+      <h1 className="logo__word cg-up" style={{ animationDelay: '0.15s' }}>
+        CITY
+        <br />
+        GUESS
+      </h1>
+    </div>
   );
 }

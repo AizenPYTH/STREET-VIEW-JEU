@@ -5,7 +5,7 @@ const KEYS = {
   profile: 'cg.profile',
   lastRoom: 'cg.lastRoom',
   sound: 'cg.sound',
-  seenHowTo: 'cg.seenHowTo',
+  haptics: 'cg.haptics',
 } as const;
 
 function read(key: string): string | null {
@@ -71,5 +71,11 @@ export const storage = {
   },
   setSoundEnabled(enabled: boolean): void {
     write(KEYS.sound, enabled ? 'on' : 'off');
+  },
+  isHapticsEnabled(): boolean {
+    return read(KEYS.haptics) !== 'off';
+  },
+  setHapticsEnabled(enabled: boolean): void {
+    write(KEYS.haptics, enabled ? 'on' : 'off');
   },
 };

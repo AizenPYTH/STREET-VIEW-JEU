@@ -1,56 +1,48 @@
-import { useEffect, useRef } from 'react';
-import { ROOM_CODE_LENGTH, normalizeRoomCode } from '@cityguess/shared';
+import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from '@cityguess/shared';
+import { BackspaceIcon } from './Icons';
+import { playSound } from '../../services/sound';
+import { haptic } from '../../services/haptics';
 
 interface CodeInputProps {
   value: string;
   onChange(value: string): void;
-  onComplete?(value: string): void;
-  autoFocus?: boolean;
-  error?: string | null;
+  error?: boolean;
 }
 
-/** Five big boxes backed by a single hidden input so the native keyboard and paste work everywhere. */
-export function CodeInput({ value, onChange, onComplete, autoFocus = false, error }: CodeInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
-
+/** Five boxes driven by the custom keypad below (§11): no system keyboard, no autocorrect. */
+export function CodeInput({ value, onChange, error = false }: CodeInputProps) {
   const boxes = Array.from({ length: ROOM_CODE_LENGTH }, (_, i) => value[i] ?? '');
-  const activeIndex = Math.min(value.length, ROOM_CODE_LENGTH - 1);
-
+  const active = Math.min(value.length, ROOM_CODE_LENGTH - 1);
+  const press = (ch: string): void => {
+    if (value.length >= ROOM_CODE_LENGTH) return;
+    playSound('click');
+    haptic('light');
+    onChange(value + ch);
+  };
+  const back = (): void => {
+    if (!value) return;
+    playSound('click');
+    onChange(value.slice(0, -1));
+  };
   return (
-    <div className={`code ${error ? 'code--error' : ''}`} onClick={() => inputRef.current?.focus()}>
-      <input
-        ref={inputRef}
-        className="code__input"
-        value={value}
-        inputMode="text"
-        autoCapitalize="characters"
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-        maxLength={ROOM_CODE_LENGTH}
-        aria-label="Room code"
-        data-testid="code-input"
-        onChange={(e) => {
-          const next = normalizeRoomCode(e.target.value);
-          onChange(next);
-          if (next.length === ROOM_CODE_LENGTH) onComplete?.(next);
-        }}
-      />
-      <div className="code__boxes" aria-hidden="true">
+    <>
+      <div className={`code ${error ? 'code--error' : ''}`} role="group" aria-label={`Code de la room : ${value || 'vide'}`} data-testid="code-boxes">
         {boxes.map((ch, i) => (
-          <span key={i} className={`code__box ${ch ? 'code__box--filled' : ''} ${i === activeIndex ? 'code__box--active' : ''}`}>
-            {ch || <span className="code__placeholder">·</span>}
+          <span key={i} className={`code__box ${ch ? 'code__box--filled' : ''} ${i === active && value.length < ROOM_CODE_LENGTH ? 'code__box--active' : ''}`}>
+            {ch}
           </span>
         ))}
       </div>
-      {error && (
-        <p className="field__error" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
+      <div className="keypad" aria-label="Clavier" data-testid="keypad">
+        {[...ROOM_CODE_ALPHABET].map((ch) => (
+          <button key={ch} type="button" className="key" onClick={() => press(ch)} data-key={ch} disabled={value.length >= ROOM_CODE_LENGTH}>
+            {ch}
+          </button>
+        ))}
+        <button type="button" className="key key--wide" onClick={back} aria-label="Effacer" data-key="backspace" disabled={!value}>
+          <BackspaceIcon />
+        </button>
+      </div>
+    </>
   );
 }

@@ -3,12 +3,7 @@ import { AVATARS } from '@cityguess/shared';
 import { storage, type StoredProfile } from '../services/storage';
 
 export function useProfile(): [StoredProfile, (patch: Partial<StoredProfile>) => void] {
-  const [profile, setProfile] = useState<StoredProfile>(() => {
-    const saved = storage.getProfile();
-    if (saved) return saved;
-    const avatar = AVATARS[Math.floor(Math.random() * AVATARS.length)]?.id ?? 'fox';
-    return { name: '', avatar };
-  });
+  const [profile, setProfile] = useState<StoredProfile>(() => storage.getProfile() ?? { name: '', avatar: AVATARS[0]?.id ?? 'diamond' });
   return [
     profile,
     (patch) => {

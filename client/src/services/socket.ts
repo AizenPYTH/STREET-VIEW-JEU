@@ -22,7 +22,7 @@ export class RequestError extends Error {
 
 function request<T>(run: (ack: (result: AckResult<T>) => void) => void): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new RequestError('TIMEOUT', 'The server did not answer. Check your connection and try again.')), 12_000);
+    const timer = setTimeout(() => reject(new RequestError('TIMEOUT', 'Le serveur ne répond pas. Vérifie ta connexion.')), 12_000);
     run((result) => {
       clearTimeout(timer);
       if (result.ok) resolve(result.data);
@@ -48,21 +48,17 @@ export function getSocket(): GameSocket {
     const wasReconnect = hadConnection;
     hadConnection = true;
     store.setConnection('connected');
+    syncClock();
     if (wasReconnect) {
-      store.pushToast({ kind: 'success', text: 'Reconnected' });
-      // Reclaim our seat in the room we were in.
       const code = useGameStore.getState().snapshot?.code ?? storage.getLastRoom();
       if (code) {
         rejoinRoom(code).catch((error: RequestError) => {
-          if (error.code === 'ROOM_NOT_FOUND' || error.code === 'NOT_IN_ROOM') useGameStore.getState().leaveLocally(error.message);
+          if (error.code === 'ROOM_NOT_FOUND' || error.code === 'NOT_IN_ROOM') useGameStore.getState().leaveLocally('closed');
         });
       }
     }
-    syncClock();
   });
-  s.on('disconnect', () => {
-    store.setConnection('reconnecting');
-  });
+  s.on('disconnect', () => store.setConnection('reconnecting'));
   s.io.on('reconnect_failed', () => store.setConnection('disconnected'));
   s.on('connect_error', () => {
     if (!hadConnection) store.setConnection('reconnecting');
@@ -72,8 +68,14 @@ export function getSocket(): GameSocket {
     useGameStore.getState().applySnapshot(snapshot);
   });
   s.on('room:event', (event) => useGameStore.getState().applyEvent(event));
-  s.on('room:closed', ({ reason }) => useGameStore.getState().leaveLocally(reason));
+  s.on('room:closed', () => useGameStore.getState().leaveLocally('closed'));
   return s;
+}
+
+/** Forces a fresh connection attempt (used by the "Réessayer" button). */
+export function reconnectNow(): void {
+  const s = getSocket();
+  if (!s.connected) s.connect();
 }
 
 function syncClock(): void {
@@ -82,9 +84,9 @@ function syncClock(): void {
   s.emit('time:ping', sentAt, (serverTime) => recordServerTime(serverTime, Date.now() - sentAt));
 }
 
-export async function createRoom(profile: ProfilePayload): Promise<RoomJoined> {
+export async function createRoom(profile: ProfilePayload, settings: Partial<GameSettings>): Promise<RoomJoined> {
   const s = getSocket();
-  const joined = await request<RoomJoined>((ack) => s.emit('room:create', profile, ack));
+  const joined = await request<RoomJoined>((ack) => s.emit('room:create', { ...profile, settings }, ack));
   storage.setLastRoom(joined.code);
   return joined;
 }
@@ -106,36 +108,16 @@ export async function rejoinRoom(code: string): Promise<RoomJoined> {
 export async function leaveRoom(): Promise<void> {
   const s = getSocket();
   storage.setLastRoom(null);
-  useGameStore.getState().leaveLocally(null);
+  useGameStore.getState().leaveLocally('left');
   await request<undefined>((ack) => s.emit('room:leave', ack)).catch(() => undefined);
 }
 
-export function updateSettings(patch: Partial<GameSettings>): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('room:updateSettings', patch, ack));
-}
-
-export function toggleReady(): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('room:toggleReady', ack));
-}
-
-export function startGame(): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('game:start', ack));
-}
-
-export function submitGuess(position: { lat: number; lng: number }): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('game:submitGuess', { position }, ack));
-}
-
-export function nextRound(): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('game:nextRound', ack));
-}
-
-export function rematch(newCity: boolean): Promise<undefined> {
-  const s = getSocket();
-  return request<undefined>((ack) => s.emit('game:rematch', { newCity }, ack));
-}
+export const api = {
+  updateSettings: (patch: Partial<GameSettings>) => request<undefined>((ack) => getSocket().emit('room:updateSettings', patch, ack)),
+  setReady: (ready: boolean) => request<undefined>((ack) => getSocket().emit('room:setReady', { ready }, ack)),
+  startGame: () => request<undefined>((ack) => getSocket().emit('game:start', ack)),
+  panoReady: () => request<undefined>((ack) => getSocket().emit('game:panoReady', ack)),
+  submitGuess: (position: { lat: number; lng: number }) => request<undefined>((ack) => getSocket().emit('game:submitGuess', { position }, ack)),
+  nextRound: () => request<undefined>((ack) => getSocket().emit('game:nextRound', ack)),
+  rematch: (newCity: boolean) => request<undefined>((ack) => getSocket().emit('game:rematch', { newCity }, ack)),
+};

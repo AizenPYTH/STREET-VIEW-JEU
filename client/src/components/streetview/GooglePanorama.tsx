@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadGoogleMaps } from '../../services/googleMaps';
-import { Spinner } from '../ui/Spinner';
+import { Loader } from '../ui/Spinner';
+import { Button } from '../ui/Button';
 
 interface GooglePanoramaProps {
   panoId: string;
   apiKey: string;
+  onReady(): void;
 }
 
 /** Deterministic initial heading so every player starts looking the same way. */
@@ -14,14 +16,17 @@ function headingFor(panoId: string): number {
   return hash % 360;
 }
 
-export function GooglePanorama({ panoId, apiKey }: GooglePanoramaProps) {
+export function GooglePanorama({ panoId, apiKey, onReady }: GooglePanoramaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const panoRef = useRef<google.maps.StreetViewPanorama | null>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [message, setMessage] = useState<string>('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    let listener: google.maps.MapsEventListener | null = null;
     setStatus('loading');
     loadGoogleMaps(apiKey)
       .then((maps) => {
@@ -47,38 +52,36 @@ export function GooglePanorama({ panoId, apiKey }: GooglePanoramaProps) {
         const pano = panoRef.current ?? new maps.StreetViewPanorama(containerRef.current, options);
         if (panoRef.current) pano.setOptions(options);
         panoRef.current = pano;
-        const listener = pano.addListener('status_changed', () => {
-          const s = pano.getStatus();
-          if (s === maps.StreetViewStatus.OK) setStatus('ready');
-          else {
-            setStatus('error');
-            setMessage('This panorama is unavailable right now.');
-          }
+        listener = pano.addListener('status_changed', () => {
+          if (pano.getStatus() === maps.StreetViewStatus.OK) {
+            setStatus('ready');
+            onReadyRef.current();
+          } else setStatus('error');
         });
-        return () => listener.remove();
       })
-      .catch((error: Error) => {
-        if (cancelled) return;
-        setStatus('error');
-        setMessage(error.message);
+      .catch(() => {
+        if (!cancelled) setStatus('error');
       });
     return () => {
       cancelled = true;
+      listener?.remove();
     };
-  }, [panoId, apiKey]);
+  }, [panoId, apiKey, attempt]);
 
   return (
-    <div className="pano" data-testid="panorama" data-provider="google" data-pano={panoId}>
+    <div className="pano" data-testid="panorama" data-provider="google" data-pano={panoId} data-status={status}>
       <div ref={containerRef} className="pano__canvas" />
       {status !== 'ready' && (
         <div className="pano__overlay">
           {status === 'loading' ? (
-            <>
-              <Spinner size={32} />
-              <span>Loading street view…</span>
-            </>
+            <Loader label="Chargement de la rue…" />
           ) : (
-            <span className="pano__error">{message}</span>
+            <>
+              <p className="t-body">La vue rue n'a pas chargé</p>
+              <Button variant="secondary" filled onClick={() => setAttempt((a) => a + 1)} style={{ width: 'auto', padding: '0 24px' }}>
+                Réessayer
+              </Button>
+            </>
           )}
         </div>
       )}

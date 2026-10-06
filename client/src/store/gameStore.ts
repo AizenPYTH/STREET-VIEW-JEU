@@ -1,129 +1,117 @@
 import { create } from 'zustand';
-import type { PlayerPublic, RoomEvent, RoomSnapshot } from '@cityguess/shared';
+import { TIMINGS, type PlayerPublic, type RoomEvent, type RoomSnapshot } from '@cityguess/shared';
 import { playSound } from '../services/sound';
 import { haptic } from '../services/haptics';
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 
-export interface Toast {
+export interface TopToast {
   id: number;
-  kind: 'info' | 'success' | 'warning' | 'error';
+  kind: 'accent' | 'muted' | 'hot';
   text: string;
 }
 
 interface GameState {
   connection: ConnectionStatus;
   snapshot: RoomSnapshot | null;
-  /** Reason the last room was closed / left, shown once on the home screen. */
-  closedReason: string | null;
-  toasts: Toast[];
+  /** The room we just left and why: 'closed' (server) or 'left' (on purpose). Blocks auto‑rejoin. */
+  lastLeft: { code: string; reason: 'closed' | 'left' } | null;
+  toast: TopToast | null;
   setConnection(status: ConnectionStatus): void;
   applySnapshot(snapshot: RoomSnapshot): void;
   applyEvent(event: RoomEvent): void;
-  leaveLocally(reason: string | null): void;
-  pushToast(toast: Omit<Toast, 'id'>): void;
-  dismissToast(id: number): void;
-  clearClosedReason(): void;
+  leaveLocally(reason: 'closed' | 'left'): void;
+  showToast(text: string, kind?: TopToast['kind'], ms?: number): void;
+  clearLastLeft(): void;
 }
 
 let toastId = 0;
+let toastTimer: number | null = null;
 
 export const useGameStore = create<GameState>((set, get) => ({
   connection: 'connecting',
   snapshot: null,
-  closedReason: null,
-  toasts: [],
+  lastLeft: null,
+  toast: null,
 
   setConnection: (connection) => set({ connection }),
 
   applySnapshot: (snapshot) => {
     const previous = get().snapshot;
-    set({ snapshot, closedReason: null });
+    set({ snapshot, lastLeft: null });
     if (previous && previous.code === snapshot.code && previous.phase !== snapshot.phase) {
-      switch (snapshot.phase) {
-        case 'round':
-          playSound('go');
-          haptic('medium');
-          break;
-        case 'revealing':
-          playSound('reveal');
-          haptic('success');
-          break;
-        case 'finished':
+      if (snapshot.phase === 'guessing') {
+        playSound('timeUp');
+        haptic('medium');
+      }
+      if (snapshot.phase === 'finished') {
+        const won = snapshot.final?.winnerIds.includes(snapshot.you);
+        if (won) {
           playSound('victory');
-          haptic('victory');
-          break;
-        default:
-          break;
+          haptic('success');
+          window.setTimeout(() => haptic('success'), 150);
+        } else {
+          playSound('defeat');
+          haptic('medium');
+        }
       }
     }
   },
 
   applyEvent: (event) => {
-    const { snapshot, pushToast } = get();
+    const { snapshot, showToast } = get();
     const me = snapshot?.you;
     const isMe = event.playerId !== null && event.playerId === me;
-    const name = event.playerName ?? 'A player';
+    const name = event.playerName ?? 'Un joueur';
     switch (event.type) {
       case 'playerJoined':
         if (!isMe) {
-          pushToast({ kind: 'info', text: `${name} joined` });
+          showToast(`${name} a rejoint`);
           playSound('join');
           haptic('light');
         }
         break;
       case 'playerLeft':
-        if (!isMe) pushToast({ kind: 'warning', text: `${name} left the room` });
-        break;
-      case 'playerDisconnected':
-        if (!isMe) pushToast({ kind: 'warning', text: `${name} disconnected` });
-        break;
-      case 'playerReconnected':
-        if (!isMe) pushToast({ kind: 'success', text: `${name} is back` });
+        if (!isMe) showToast(`${name} a quitté`, 'muted', 1600);
         break;
       case 'hostChanged':
-        pushToast({ kind: 'info', text: isMe ? 'You are now the host' : `${name} is now the host` });
+        showToast(isMe ? "Tu es l'hôte" : `${name} est l'hôte`, 'muted', 1600);
         break;
-      case 'playerReady':
-        if (!isMe) playSound('ready');
+      case 'rematchRequested':
+        if (!isMe) showToast(`Revanche demandée par ${name}`, 'hot', 2500);
+        break;
+      case 'newCityRequested':
+        if (!isMe) showToast(`${name} choisit une ville`, 'muted', 1600);
         break;
       case 'guessLocked':
-        if (!isMe) {
-          playSound('tick');
-          haptic('light');
-        }
+        if (!isMe) playSound('tick');
         break;
       case 'gameStartFailed':
-        pushToast({ kind: 'error', text: 'Could not load locations for this city. Try again or pick another city.' });
+        showToast('Impossible de charger des lieux. Réessaie.', 'muted', 2500);
         playSound('error');
+        haptic('error');
         break;
       default:
         break;
     }
   },
 
-  leaveLocally: (reason) => set({ snapshot: null, closedReason: reason }),
+  leaveLocally: (reason) => set((state) => ({ snapshot: null, lastLeft: state.snapshot ? { code: state.snapshot.code, reason } : null })),
 
-  pushToast: (toast) => {
+  showToast: (text, kind = 'accent', ms = TIMINGS.joinToastMs) => {
+    if (toastTimer) window.clearTimeout(toastTimer);
     const id = ++toastId;
-    set((state) => ({ toasts: [...state.toasts.slice(-3), { ...toast, id }] }));
-    setTimeout(() => get().dismissToast(id), 3200);
+    set({ toast: { id, kind, text } });
+    toastTimer = window.setTimeout(() => {
+      if (get().toast?.id === id) set({ toast: null });
+    }, ms);
   },
 
-  dismissToast: (id) => set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
-
-  clearClosedReason: () => set({ closedReason: null }),
+  clearLastLeft: () => set({ lastLeft: null }),
 }));
-
-// ───────────── selectors ─────────────
 
 export const selectMe = (state: GameState): PlayerPublic | null => {
   const s = state.snapshot;
   if (!s) return null;
   return s.players.find((p) => p.id === s.you) ?? null;
-};
-
-export const selectIsHost = (state: GameState): boolean => {
-  const s = state.snapshot;
-  return !!s && s.hostId === s.you;
 };

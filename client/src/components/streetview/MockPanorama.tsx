@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 interface MockPanoramaProps {
   panoId: string;
+  onReady(): void;
 }
 
 function seedFrom(panoId: string): () => number {
@@ -16,10 +17,11 @@ function seedFrom(panoId: string): () => number {
 /**
  * Procedural 360° "street" used when the server runs with STREET_VIEW_PROVIDER=mock
  * (automated tests and key‑less development). Drag horizontally to look around.
- * It is never used in production with the Google provider.
  */
-export function MockPanorama({ panoId }: MockPanoramaProps) {
+export function MockPanorama({ panoId, onReady }: MockPanoramaProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -31,8 +33,8 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
       x: rng(),
       w: 0.03 + rng() * 0.06,
       h: 0.25 + rng() * 0.45,
-      hue: 200 + rng() * 40,
-      light: 18 + rng() * 22,
+      hue: 30 + rng() * 30,
+      light: 14 + rng() * 18,
       windows: Math.floor(2 + rng() * 5),
     }));
     const skyHue = 200 + rng() * 30;
@@ -51,10 +53,10 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       const sky = ctx.createLinearGradient(0, 0, 0, height);
-      sky.addColorStop(0, `hsl(${skyHue} 60% 55%)`);
-      sky.addColorStop(0.6, `hsl(${skyHue + 10} 50% 78%)`);
-      sky.addColorStop(0.61, '#5a5f66');
-      sky.addColorStop(1, '#2d3036');
+      sky.addColorStop(0, `hsl(${skyHue} 40% 40%)`);
+      sky.addColorStop(0.6, `hsl(${skyHue + 10} 40% 70%)`);
+      sky.addColorStop(0.61, '#4a4640');
+      sky.addColorStop(1, '#26231e');
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, width, height);
       const horizon = height * 0.6;
@@ -66,17 +68,15 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
           const bw = b.w * span;
           if (bx + bw < 0 || bx > width) continue;
           const bh = b.h * horizon;
-          ctx.fillStyle = `hsl(${b.hue} 20% ${b.light}%)`;
+          ctx.fillStyle = `hsl(${b.hue} 18% ${b.light}%)`;
           ctx.fillRect(bx, horizon - bh, bw, bh);
-          ctx.fillStyle = 'rgba(255, 230, 150, 0.55)';
+          ctx.fillStyle = 'rgba(240, 180, 90, 0.5)';
           for (let r = 0; r < b.windows; r++) {
-            for (let c = 0; c < 3; c++) {
-              ctx.fillRect(bx + 6 + c * (bw / 3.4), horizon - bh + 10 + r * (bh / (b.windows + 1)), 5, 7);
-            }
+            for (let c = 0; c < 3; c++) ctx.fillRect(bx + 6 + c * (bw / 3.4), horizon - bh + 10 + r * (bh / (b.windows + 1)), 5, 7);
           }
         }
       }
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
       ctx.setLineDash([18, 14]);
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -84,9 +84,9 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
       ctx.lineTo(width / 2, horizon + 10);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.font = '600 13px system-ui';
-      ctx.fillText(`MOCK STREET VIEW · heading ${Math.round(((heading % 360) + 360) % 360)}°`, 12, height - 14);
+      ctx.fillStyle = 'rgba(243,239,230,0.7)';
+      ctx.font = '600 12px JetBrains Mono, monospace';
+      ctx.fillText(`VUE RUE SIMULÉE · ${Math.round(((heading % 360) + 360) % 360)}°`, 16, height - 72);
     };
 
     const onDown = (e: PointerEvent): void => {
@@ -110,7 +110,9 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
     canvas.addEventListener('pointercancel', onUp);
     window.addEventListener('resize', draw);
     draw();
+    const ready = window.setTimeout(() => onReadyRef.current(), 50);
     return () => {
+      window.clearTimeout(ready);
       cancelAnimationFrame(frame);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
@@ -121,7 +123,7 @@ export function MockPanorama({ panoId }: MockPanoramaProps) {
   }, [panoId]);
 
   return (
-    <div className="pano" data-testid="panorama" data-provider="mock" data-pano={panoId}>
+    <div className="pano" data-testid="panorama" data-provider="mock" data-pano={panoId} data-status="ready">
       <canvas ref={canvasRef} className="pano__canvas pano__canvas--mock" />
     </div>
   );
