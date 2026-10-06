@@ -1,0 +1,35 @@
+{
+  "name": "cityguess",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CityGuess — a competitive multiplayer city-guessing game for 2–8 friends.",
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "server",
+    "client"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w server && npm run build -w client",
+    "predev": "npm run build -w packages/shared",
+    "dev": "concurrently -n server,client -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "start": "node server/dist/index.js",
+    "typecheck": "npm run build -w packages/shared && npm run typecheck -w server && npm run typecheck -w client",
+    "lint": "eslint .",
+    "test": "npm run test -w packages/shared && npm run test -w server",
+    "test:e2e": "playwright test",
+    "test:all": "npm run typecheck && npm run test && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.37.0",
+    "@eslint/js": "^9.37.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "eslint-plugin-react-hooks": "^6.1.1"
+  }
+}
