@@ -3,6 +3,7 @@ import type { Server, Socket } from 'socket.io';
 import {
   AVATARS,
   MAX_NAME_LENGTH,
+  MIN_NAME_LENGTH,
   isValidRoomCode,
   normalizeRoomCode,
   type AckResult,
@@ -30,20 +31,24 @@ interface SocketContext {
 const RATE_LIMIT_WINDOW_MS = 5000;
 const RATE_LIMIT_MAX = 40;
 
-const profileSchema = z.object({
-  name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
-  avatar: z.string().refine((id) => AVATARS.some((a) => a.id === id), 'Unknown avatar'),
-});
-const joinSchema = profileSchema.extend({ code: z.string().min(1).max(10) });
-const rejoinSchema = z.object({ code: z.string().max(10).optional().default('') });
 const settingsSchema = z
   .object({
     cityId: z.string().min(1).max(40),
     rounds: z.union([z.literal(3), z.literal(5), z.literal(10)]),
     exploreSeconds: z.union([z.literal(15), z.literal(30), z.literal(45), z.literal(60)]),
     difficulty: z.enum(['easy', 'normal', 'hard', 'expert']),
+    capacity: z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7), z.literal(8)]),
+    doubleFinal: z.boolean(),
   })
   .partial();
+const profileSchema = z.object({
+  name: z.string().trim().min(MIN_NAME_LENGTH).max(MAX_NAME_LENGTH),
+  avatar: z.string().refine((id) => AVATARS.some((a) => a.id === id), 'Avatar inconnu'),
+});
+const createSchema = profileSchema.extend({ settings: settingsSchema.optional() });
+const joinSchema = profileSchema.extend({ code: z.string().min(1).max(10) });
+const rejoinSchema = z.object({ code: z.string().max(10).optional().default('') });
+const readySchema = z.object({ ready: z.boolean() });
 const guessSchema = z.object({
   position: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }),
 });
@@ -91,7 +96,7 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
       const now = Date.now();
       ctx.hits = ctx.hits.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
       if (ctx.hits.length >= RATE_LIMIT_MAX) {
-        ack({ ok: false, error: { code: 'RATE_LIMITED', message: 'Slow down a little' } });
+        ack({ ok: false, error: { code: 'RATE_LIMITED', message: 'Doucement…' } });
         return;
       }
       ctx.hits.push(now);
@@ -114,9 +119,9 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
     };
 
     const currentRoom = (): { room: GameRoom; playerId: string } => {
-      if (!ctx.roomCode || !ctx.playerId) throw new GameError('NOT_IN_ROOM', 'Join a room first');
+      if (!ctx.roomCode || !ctx.playerId) throw new GameError('NOT_IN_ROOM', 'Rejoins d’abord une room');
       const room = manager.getRoom(ctx.roomCode);
-      if (!room) throw new GameError('ROOM_NOT_FOUND', 'This room has been closed');
+      if (!room) throw new GameError('ROOM_NOT_FOUND', 'Cette room est fermée');
       return { room, playerId: ctx.playerId };
     };
 
@@ -129,10 +134,11 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
 
     socket.on('room:create', (payload, ack) =>
       guard(ack, () => {
-        const parsed = parse(profileSchema, payload);
+        const parsed = parse(createSchema, payload);
         detach();
         const room = manager.createRoom();
         const player = room.addPlayer(ctx.token, parsed.name, parsed.avatar);
+        if (parsed.settings) room.updateSettings(player.id, parsed.settings);
         return attach(room, player.id);
       }),
     );
@@ -141,7 +147,7 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
       guard(ack, () => {
         const parsed = parse(joinSchema, payload);
         const code = normalizeRoomCode(parsed.code);
-        if (!isValidRoomCode(code)) throw new GameError('INVALID_INPUT', 'Room codes are 5 letters or digits');
+        if (!isValidRoomCode(code)) throw new GameError('INVALID_INPUT', 'Les codes font 5 caractères');
         const room = manager.requireRoom(code);
         detach();
         const player = room.addPlayer(ctx.token, parsed.name, parsed.avatar);
@@ -154,7 +160,7 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
         const parsed = parse(rejoinSchema, payload ?? {});
         const code = normalizeRoomCode(parsed.code);
         const room = code ? manager.getRoom(code) : manager.roomForToken(ctx.token);
-        if (!room) throw new GameError('ROOM_NOT_FOUND', 'That room is not open anymore');
+        if (!room) throw new GameError('ROOM_NOT_FOUND', 'Cette room n’est plus ouverte');
         const player = room.rejoin(ctx.token);
         detach();
         return attach(room, player.id);
@@ -179,10 +185,18 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
       }),
     );
 
-    socket.on('room:toggleReady', (ack) =>
+    socket.on('room:setReady', (payload, ack) =>
       guard(ack, () => {
         const { room, playerId } = currentRoom();
-        room.toggleReady(playerId);
+        room.setReady(playerId, parse(readySchema, payload).ready);
+        return undefined;
+      }),
+    );
+
+    socket.on('game:panoReady', (ack) =>
+      guard(ack, () => {
+        const { room, playerId } = currentRoom();
+        room.panoReady(playerId);
         return undefined;
       }),
     );
@@ -213,9 +227,9 @@ export function registerHandlers(io: GameServer, manager: RoomManager): void {
     );
 
     socket.on('game:rematch', (payload, ack) =>
-      guard(ack, () => {
+      guard(ack, async () => {
         const { room, playerId } = currentRoom();
-        room.rematch(playerId, parse(rematchSchema, payload).newCity);
+        await room.rematch(playerId, parse(rematchSchema, payload).newCity);
         return undefined;
       }),
     );

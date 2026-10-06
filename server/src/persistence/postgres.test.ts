@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { offsetLatLng, REVEAL_SECONDS, RESULTS_SECONDS } from '@cityguess/shared';
+import { offsetLatLng, RESULTS_PHASE_MS, TIMINGS } from '@cityguess/shared';
 import { runMigrations } from './migrate.js';
 import { PostgresPersistence } from './postgres.js';
 import { FakeClock } from '../game/clock.js';
@@ -41,16 +41,22 @@ describeDb('PostgresPersistence (requires TEST_DATABASE_URL)', () => {
       onEmpty: () => {},
       hooks: persistence,
     });
-    const alex = room.addPlayer('token-alex-xxxxxxxxxxxxxxxx', 'Alex', 'fox');
-    const yass = room.addPlayer('token-yass-xxxxxxxxxxxxxxxx', 'Yass', 'panda');
+    const alex = room.addPlayer('token-alex-xxxxxxxxxxxxxxxx', 'Alex', 'diamond');
+    const yass = room.addPlayer('token-yass-xxxxxxxxxxxxxxxx', 'Yass', 'circle');
+    room.setReady(alex.id, true);
+    room.setReady(yass.id, true);
     room.updateSettings(alex.id, { rounds: 3, cityId: 'paris' });
     await room.startGame(alex.id);
-    clock.advance(3000);
+    clock.advance(TIMINGS.startingLogoMs);
     for (let r = 0; r < 3; r++) {
+      room.panoReady(alex.id);
+      room.panoReady(yass.id);
+      clock.advance(TIMINGS.intro.totalMs);
       const real = picked.locations[r]!.location;
       room.submitGuess(alex.id, offsetLatLng(real, 10, 0));
-      room.submitGuess(yass.id, offsetLatLng(real, 900, 1));
-      clock.advance(REVEAL_SECONDS * 1000 + RESULTS_SECONDS * 1000);
+      if (r < 2) room.submitGuess(yass.id, offsetLatLng(real, 900, 1));
+      else clock.advance(30_000 + TIMINGS.guessMs);
+      clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs + RESULTS_PHASE_MS);
     }
     expect(room.phase).toBe('finished');
     persistence.roomClosed(room);
@@ -70,18 +76,19 @@ describeDb('PostgresPersistence (requires TEST_DATABASE_URL)', () => {
     expect(games.rows[0]?.finished_at).not.toBeNull();
     expect(games.rows[0]?.winner_player_id).toBe(alex.id);
 
-    const rounds = await pool.query('select index, pano_id, lat, lng, revealed_at from rounds where game_id = $1 order by index', [room.gameId]);
+    const rounds = await pool.query('select index, pano_id, lat, lng, multiplier, revealed_at from rounds where game_id = $1 order by index', [room.gameId]);
     expect(rounds.rows).toHaveLength(3);
     expect(rounds.rows[0]?.lat).toBeCloseTo(picked.locations[0]!.location.lat, 6);
+    expect(rounds.rows.map((r) => r.multiplier)).toEqual([1, 1, 2]);
     expect(rounds.rows.every((r) => r.revealed_at !== null)).toBe(true);
 
-    const guesses = await pool.query('select count(*)::int as n, min(score)::int as min_score from guesses g join rounds r on r.id = g.round_id where r.game_id = $1', [room.gameId]);
+    const guesses = await pool.query('select count(*)::int as n, count(*) filter (where auto)::int as auto_n from guesses g join rounds r on r.id = g.round_id where r.game_id = $1', [room.gameId]);
     expect(guesses.rows[0]?.n).toBe(6);
-    expect(guesses.rows[0]?.min_score).toBeGreaterThan(0);
+    expect(guesses.rows[0]?.auto_n).toBe(1);
 
     const standings = await pool.query('select player_id, total_score, rank from game_players where game_id = $1 order by rank', [room.gameId]);
     expect(standings.rows[0]?.player_id).toBe(alex.id);
-    expect(standings.rows[0]?.total_score).toBe(3300);
+    expect(standings.rows[0]?.total_score).toBe(1093 + 1093 + 2086); // 10 m guesses: 993 (+100), last round doubled
     expect(standings.rows[1]?.rank).toBe(2);
 
     const cities = await pool.query('select count(*)::int as n from cities');

@@ -1,0 +1,86 @@
+/* CityGuess design tokens */
+:root {
+  color-scheme: dark;
+
+  /* Colours */
+  --bg: #0a0d14;
+  --bg-elevated: #10141f;
+  --surface: #161c2a;
+  --surface-2: #1e2637;
+  --surface-3: #273047;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f4f6fb;
+  --text-muted: #8e97ac;
+  --text-faint: #5e6679;
+  --accent: #c8ff3d;
+  --accent-strong: #b4f21a;
+  --accent-soft: rgba(200, 255, 61, 0.14);
+  --accent-ink: #0a0d14;
+  --info: #5b8cff;
+  --info-soft: rgba(91, 140, 255, 0.16);
+  --danger: #ff5c5c;
+  --danger-soft: rgba(255, 92, 92, 0.16);
+  --warning: #ffb020;
+  --warning-soft: rgba(255, 176, 32, 0.16);
+  --success: #35d07f;
+  --success-soft: rgba(53, 208, 127, 0.16);
+  --gold: #ffd166;
+  --silver: #c9d1e0;
+  --bronze: #d99a66;
+
+  /* Typography */
+  --font-sans: 'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+  --text-5xl: 64px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --glow-accent: 0 0 0 1px rgba(200, 255, 61, 0.35), 0 8px 32px rgba(200, 255, 61, 0.25);
+
+  /* Safe areas */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 220ms;
+  --duration-slow: 400ms;
+
+  /* Layout */
+  --touch-target: 48px;
+  --content-max: 480px;
+}

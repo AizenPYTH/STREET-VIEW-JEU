@@ -38,7 +38,7 @@ export class RoomManager {
       pickLocations: this.deps.pickLocations,
       onStateChanged: this.deps.onStateChanged,
       onEvent: this.deps.onEvent,
-      onEmpty: (r) => this.closeRoom(r, 'Everyone left the room'),
+      onEmpty: (r) => this.closeRoom(r, 'Tout le monde a quitté la room'),
       ...(this.deps.hooks ? { hooks: this.deps.hooks } : {}),
       ...(this.deps.rng ? { rng: this.deps.rng } : {}),
     });
@@ -53,7 +53,7 @@ export class RoomManager {
 
   requireRoom(code: string): GameRoom {
     const room = this.rooms.get(code);
-    if (!room) throw new GameError('ROOM_NOT_FOUND', `Room ${code} does not exist (or has expired)`);
+    if (!room) throw new GameError('ROOM_NOT_FOUND', `La room ${code} n’existe pas (ou a expiré)`);
     return room;
   }
 
@@ -87,10 +87,10 @@ export class RoomManager {
     let closed = 0;
     for (const room of [...this.rooms.values()]) {
       if (now - room.createdAt > ROOM_MAX_AGE_MS) {
-        this.closeRoom(room, 'Room expired');
+        this.closeRoom(room, 'La room a expiré');
         closed++;
       } else if (room.isIdle(ROOM_IDLE_TTL_MS)) {
-        this.closeRoom(room, 'Room closed after inactivity');
+        this.closeRoom(room, 'Room fermée après inactivité');
         closed++;
       }
     }
@@ -98,6 +98,6 @@ export class RoomManager {
   }
 
   disposeAll(): void {
-    for (const room of [...this.rooms.values()]) this.closeRoom(room, 'Server shutting down');
+    for (const room of [...this.rooms.values()]) this.closeRoom(room, 'Le serveur redémarre');
   }
 }

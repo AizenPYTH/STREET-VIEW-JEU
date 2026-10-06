@@ -1,48 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import {
-  GUESS_SECONDS,
-  RESULTS_SECONDS,
-  REVEAL_SECONDS,
-  ROUND_INTRO_SECONDS,
-  calculateScore,
-  distanceBetween,
-  offsetLatLng,
-  requireCity,
-  scoringForScale,
-} from '@cityguess/shared';
+import { RESULTS_PHASE_MS, TIMINGS, calculateScore, distanceBetween, offsetLatLng, requireCity } from '@cityguess/shared';
 import { GameError } from './errors.js';
-import { addPlayers, createHarness, eventTypes, startAndEnterRound } from './testUtils.js';
+import { addPlayers, createHarness, enterExploration, eventTypes, skipRevealAndResults, startAndEnterRound } from './testUtils.js';
 
-const INTRO = ROUND_INTRO_SECONDS * 1000;
+const INTRO = TIMINGS.intro.totalMs;
+const GUESS = TIMINGS.guessMs;
 
 describe('lobby', () => {
-  it('first player becomes host, colours are unique', () => {
+  it('first player becomes host, avatars are unique and honour preferences when free', () => {
     const h = createHarness();
-    const [a, b, c] = addPlayers(h, ['Alex', 'Yass', 'Sam']);
-    expect(a?.isHost).toBe(true);
-    expect(b?.isHost).toBe(false);
-    expect(h.room.hostId).toBe(a?.id);
-    expect(new Set([a?.color, b?.color, c?.color]).size).toBe(3);
+    const a = h.room.addPlayer('token-a-xxxxxxxxxxxxxxxxxx', 'Alex', 'circle');
+    const b = h.room.addPlayer('token-b-xxxxxxxxxxxxxxxxxx', 'Yass', 'circle');
+    const c = h.room.addPlayer('token-c-xxxxxxxxxxxxxxxxxx', 'Sam', 'nope');
+    expect(a.isHost).toBe(true);
+    expect(b.isHost).toBe(false);
+    expect(a.avatar).toBe('circle');
+    expect(b.avatar).toBe('diamond');
+    expect(c.avatar).toBe('square');
+    expect(new Set([a.color, b.color, c.color]).size).toBe(3);
     expect(h.room.phase).toBe('waiting');
     expect(eventTypes(h)).toEqual(['playerJoined', 'playerJoined', 'playerJoined']);
   });
 
-  it('rejects an 9th player, duplicate names and invalid names', () => {
+  it('enforces capacity, 8 players max, duplicate names and name length', () => {
     const h = createHarness();
-    addPlayers(h, ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8']);
-    expect(() => h.room.addPlayer('token-9-xxxxxxxxxxxxxxxxxx', 'P9', 'fox')).toThrowError(/full/);
+    const [host] = addPlayers(h, ['P1']);
+    h.room.updateSettings(host!.id, { capacity: 2 });
+    addPlayers(h, ['P2']);
+    expect(() => h.room.addPlayer('token-3-xxxxxxxxxxxxxxxxxx', 'P3', 'diamond')).toThrowError(/déjà 2 joueurs/);
+    expect(() => h.room.updateSettings(host!.id, { capacity: 1 as never })).toThrow(/Capacité/);
+    h.room.updateSettings(host!.id, { capacity: 8 });
+    addPlayers(h, ['P3', 'P4', 'P5', 'P6', 'P7', 'P8']);
+    expect(() => h.room.addPlayer('token-9-xxxxxxxxxxxxxxxxxx', 'P9', 'diamond')).toThrow(GameError);
+    expect(() => h.room.updateSettings(host!.id, { capacity: 4 })).toThrow(/déjà plus de joueurs/);
+
     const h2 = createHarness();
     addPlayers(h2, ['Alex']);
-    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'alex', 'fox')).toThrow(GameError);
-    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', '   ', 'fox')).toThrow(/Name/);
-    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'x'.repeat(17), 'fox')).toThrow(/Name/);
-    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'Bob', 'not-an-avatar')).toThrow(/avatar/);
+    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'alex', 'diamond')).toThrow(/déjà pris/);
+    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'A', 'diamond')).toThrow(/pseudo/);
+    expect(() => h2.room.addPlayer('token-other-xxxxxxxxxxxx', 'x'.repeat(13), 'diamond')).toThrow(/pseudo/);
   });
 
   it('re-adding the same token returns the same player (idempotent join)', () => {
     const h = createHarness();
     const [a] = addPlayers(h, ['Alex']);
-    const again = h.room.addPlayer(a!.token, 'Whatever', 'fox');
+    const again = h.room.addPlayer(a!.token, 'Whatever', 'diamond');
     expect(again.id).toBe(a?.id);
     expect(h.room.players.size).toBe(1);
   });
@@ -50,30 +52,31 @@ describe('lobby', () => {
   it('only the host can change settings, and they are validated', () => {
     const h = createHarness();
     const [host, guest] = addPlayers(h, ['Host', 'Guest']);
-    h.room.updateSettings(host!.id, { cityId: 'paris', rounds: 3, exploreSeconds: 15, difficulty: 'hard' });
-    expect(h.room.settings).toEqual({ cityId: 'paris', rounds: 3, exploreSeconds: 15, difficulty: 'hard' });
-    expect(() => h.room.updateSettings(guest!.id, { rounds: 5 })).toThrow(/host/);
-    expect(() => h.room.updateSettings(host!.id, { cityId: 'atlantis' })).toThrow(/city/);
-    expect(() => h.room.updateSettings(host!.id, { rounds: 4 as never })).toThrow(/rounds/);
-    expect(() => h.room.updateSettings(host!.id, { exploreSeconds: 20 as never })).toThrow(/timer/);
+    h.room.updateSettings(host!.id, { cityId: 'paris', rounds: 3, exploreSeconds: 15, difficulty: 'hard', doubleFinal: false });
+    expect(h.room.settings).toMatchObject({ cityId: 'paris', rounds: 3, exploreSeconds: 15, difficulty: 'hard', doubleFinal: false });
+    expect(() => h.room.updateSettings(guest!.id, { rounds: 5 })).toThrow(/hôte/);
+    expect(() => h.room.updateSettings(host!.id, { cityId: 'atlantis' })).toThrow(/Ville/);
+    expect(() => h.room.updateSettings(host!.id, { rounds: 4 as never })).toThrow(/manches/);
+    expect(() => h.room.updateSettings(host!.id, { exploreSeconds: 20 as never })).toThrow(/Durée/);
   });
 
-  it('ready toggles only in the lobby', () => {
+  it('the game cannot start until every connected player is ready', async () => {
     const h = createHarness();
-    const [host] = addPlayers(h, ['Host']);
-    h.room.toggleReady(host!.id);
-    expect(h.room.players.get(host!.id)?.isReady).toBe(true);
-    h.room.toggleReady(host!.id);
-    expect(h.room.players.get(host!.id)?.isReady).toBe(false);
+    const [host, guest] = addPlayers(h, ['Host', 'Guest'], false);
+    await expect(h.room.startGame(host!.id)).rejects.toThrow(/Host, Guest ne sont pas prêts/);
+    h.room.setReady(host!.id, true);
+    await expect(h.room.startGame(host!.id)).rejects.toThrow(/Guest n’est pas prêt/);
+    h.room.markDisconnected(guest!.id);
+    await h.room.startGame(host!.id);
+    expect(h.room.phase).toBe('starting');
   });
 
   it('host leaving the lobby transfers host to the next player; last player leaving empties the room', () => {
     const h = createHarness();
-    const [a, b, c] = addPlayers(h, ['A', 'B', 'C']);
+    const [a, b, c] = addPlayers(h, ['Ana', 'Bob', 'Cat']);
     h.room.leave(a!.id);
     expect(h.room.players.has(a!.id)).toBe(false);
     expect(h.room.hostId).toBe(b?.id);
-    expect(h.room.players.get(b!.id)?.isHost).toBe(true);
     h.room.leave(b!.id);
     expect(h.room.hostId).toBe(c?.id);
     expect(h.emptied).toBe(false);
@@ -83,32 +86,36 @@ describe('lobby', () => {
 });
 
 describe('game flow', () => {
-  it('runs a complete 4‑player game with server‑side scoring and a winner', async () => {
+  it('runs a complete 4‑player game: scripted phases, server scoring, doubled last round, standings', async () => {
     const h = createHarness();
     const [alex, yass, sam, adam] = addPlayers(h, ['Alex', 'Yass', 'Sam', 'Adam']);
     h.room.updateSettings(alex!.id, { rounds: 3, exploreSeconds: 30 });
 
     const start = h.room.startGame(alex!.id);
     expect(h.room.phase).toBe('starting');
+    expect(h.room.phaseEndsAt).toBe(h.clock.now() + TIMINGS.startingLogoMs);
     await start;
     expect(h.room.rounds).toHaveLength(3);
-    expect(h.pickerCalls[0]?.count).toBe(3);
+    expect(h.room.rounds.map((r) => r.multiplier)).toEqual([1, 1, 2]);
     expect(h.pickerCalls[0]?.city.id).toBe('marseille');
 
-    h.clock.advance(3000);
+    h.clock.advance(TIMINGS.startingLogoMs);
     expect(h.room.phase).toBe('round');
-    expect(h.room.currentRoundIndex).toBe(0);
     const round = h.room.currentRound!;
-    expect(round.exploreEndsAt - round.introEndsAt).toBe(30_000);
+    expect(round.introEndsAt - round.introStartsAt).toBe(INTRO);
+    expect(round.exploreStartedAt).toBeNull();
+
+    // Everyone's street view loads during the intro → the timer starts exactly at the end of the intro.
+    enterExploration(h);
+    expect(round.exploreStartedAt).toBe(round.introEndsAt);
+    expect(round.exploreEndsAt).toBe(round.introEndsAt + 30_000);
     expect(h.room.phaseEndsAt).toBe(round.exploreEndsAt);
 
-    // Exploration ends → guessing
-    h.clock.advance(INTRO + 30_000);
+    h.clock.advance(30_000);
     expect(h.room.phase).toBe('guessing');
-    expect(h.room.currentRound?.guessEndsAt).toBe(h.clock.now() + GUESS_SECONDS * 1000);
+    expect(round.guessEndsAt).toBe(h.clock.now() + GUESS);
 
     const real = h.locations[0]!.location;
-    const scoring = scoringForScale(requireCity('marseille').scoreScaleMeters);
     const guesses = [
       [alex, offsetLatLng(real, 10, 0)],
       [yass, offsetLatLng(real, 400, 1)],
@@ -118,106 +125,155 @@ describe('game flow', () => {
     for (const [p, pos] of guesses.slice(0, 3)) h.room.submitGuess(p!.id, pos);
     expect(h.room.phase).toBe('guessing');
     h.room.submitGuess(adam!.id, guesses[3][1]);
-    // Everyone guessed → immediate reveal
     expect(h.room.phase).toBe('revealing');
+    expect(h.room.phaseEndsAt).toBe(h.clock.now() + TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
 
     const reveal = h.room.snapshotFor(alex!.id).round?.reveal;
     expect(reveal?.location).toEqual(real);
-    expect(reveal?.results).toHaveLength(4);
+    expect(reveal?.revealStartsAt).toBe(h.clock.now() + TIMINGS.revealAlignMs);
+    expect(reveal?.resultsStartsAt).toBeNull();
+    expect(reveal?.results.map((r) => r.playerId)).toEqual([alex!.id, yass!.id, sam!.id, adam!.id]);
     for (const [p, pos] of guesses) {
       const result = reveal?.results.find((r) => r.playerId === p!.id);
-      const expected = calculateScore(distanceBetween(real, pos), scoring);
+      const expected = calculateScore(distanceBetween(real, pos));
       expect(result?.total).toBe(expected.total);
+      expect(result?.auto).toBe(false);
       expect(h.room.players.get(p!.id)?.totalScore).toBe(expected.total);
     }
-    expect(reveal?.results[0]?.playerId).toBe(alex?.id);
     expect(reveal?.results[0]?.bonusLabel).toBe('perfect');
+    const alexR1 = calculateScore(distanceBetween(real, guesses[0][1])).total;
+    expect(alexR1).toBe(993 + 100);
+    expect(reveal?.standings.map((s) => s.rank)).toEqual([1, 2, 3, 4]);
+    expect(reveal?.standings[0]).toMatchObject({ playerId: alex!.id, previousRank: null, streak: 1, gapToLeader: 0 });
+    expect(reveal?.standings[1]?.gapToLeader).toBe(alexR1 - calculateScore(distanceBetween(real, guesses[1][1])).total);
 
-    h.clock.advance(REVEAL_SECONDS * 1000);
+    h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
     expect(h.room.phase).toBe('results');
-    h.clock.advance(RESULTS_SECONDS * 1000);
+    expect(h.room.snapshotFor(alex!.id).round?.reveal?.resultsStartsAt).toBe(h.clock.now());
+    h.clock.advance(RESULTS_PHASE_MS);
     expect(h.room.phase).toBe('round');
     expect(h.room.currentRoundIndex).toBe(1);
-    expect(h.room.snapshotFor(alex!.id).players.every((p) => !p.hasGuessed)).toBe(true);
+    expect(h.room.snapshotFor(alex!.id).players.every((p) => !p.hasGuessed && !p.panoReady)).toBe(true);
 
-    // Round 2: nobody guesses in time → everyone 0, game continues
-    h.clock.advance(INTRO + 30_000 + GUESS_SECONDS * 1000);
+    // Round 2: nobody guesses in time → everyone gets an automatic guess at the city centre.
+    enterExploration(h);
+    h.clock.advance(30_000 + GUESS);
     expect(h.room.phase).toBe('revealing');
-    expect(h.room.snapshotFor(alex!.id).round?.reveal?.results).toEqual([]);
+    const auto = h.room.snapshotFor(alex!.id).round?.reveal;
+    expect(auto?.results).toHaveLength(4);
+    expect(auto?.results.every((r) => r.auto)).toBe(true);
+    const centre = requireCity('marseille').center;
+    const autoScore = calculateScore(distanceBetween(h.locations[1]!.location, centre)).total;
+    expect(auto?.results[0]?.total).toBe(autoScore);
+    expect(auto?.standings.every((s) => s.roundPoints === autoScore)).toBe(true);
+    // Everyone tied for best this round: Alex extends the streak from round 1, the others start one.
+    expect(auto?.standings.find((s) => s.playerId === alex!.id)?.streak).toBe(2);
+    expect(auto?.standings.filter((s) => s.playerId !== alex!.id).every((s) => s.streak === 1)).toBe(true);
+    expect(auto?.standings[1]?.previousRank).toBe(2);
 
-    // Host skips the results countdown
-    h.clock.advance(REVEAL_SECONDS * 1000);
-    expect(() => h.room.nextRound(yass!.id)).toThrow(/host/);
+    h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
+    expect(() => h.room.nextRound(yass!.id)).toThrow(/hôte/);
     h.room.nextRound(alex!.id);
     expect(h.room.currentRoundIndex).toBe(2);
 
-    // Round 3: only Adam guesses, 5 m away (perfect)
-    h.clock.advance(INTRO + 30_000);
+    // Round 3 (doubled): Adam nails it at 5 m, the others get auto guesses.
+    enterExploration(h);
     const real3 = h.locations[2]!.location;
     h.room.submitGuess(adam!.id, offsetLatLng(real3, 5, 0));
-    expect(h.room.phase).toBe('guessing');
-    h.clock.advance(GUESS_SECONDS * 1000);
+    expect(h.room.phase).toBe('round');
+    h.clock.advance(30_000 + GUESS);
     expect(h.room.phase).toBe('revealing');
-    h.clock.advance(REVEAL_SECONDS * 1000 + RESULTS_SECONDS * 1000);
+    const r3 = h.room.snapshotFor(alex!.id).round?.reveal;
+    const adamR3 = r3?.results.find((r) => r.playerId === adam!.id);
+    expect(adamR3?.base).toBe(2 * calculateScore(distanceBetween(real3, adamR3!.position)).base);
+    expect(adamR3?.bonus).toBe(100);
+    skipRevealAndResults(h);
 
     expect(h.room.phase).toBe('finished');
     const final = h.room.snapshotFor(sam!.id).final!;
     expect(final.ranking).toHaveLength(4);
-    expect(final.ranking[0]?.rank).toBe(1);
-    const scores = new Map(final.ranking.map((e) => [e.playerId, e.totalScore]));
-    expect(scores.get(alex!.id)).toBe(1100);
-    const adamRound1 = calculateScore(distanceBetween(real, guesses[3][1]), scoring).total;
-    expect(scores.get(adam!.id)).toBe(adamRound1 + 1100);
     expect(final.winnerIds).toEqual([adam?.id]);
-    expect(final.ranking[0]?.playerId).toBe(adam?.id);
-    expect(final.ranking[1]?.playerId).toBe(alex?.id);
-    expect(final.highlights.bestGuess?.playerId).toBe(adam?.id);
-    expect(final.highlights.bestGuess?.roundNumber).toBe(3);
-    expect(final.highlights.perfectGuesses?.count).toBe(1);
+    expect(final.stats.find((s) => s.playerId === adam!.id)?.bestGuessMeters).toBeCloseTo(5, 0);
+    expect(final.stats.find((s) => s.playerId === adam!.id)?.maxStreak).toBe(1);
+    expect(final.stats.find((s) => s.playerId === alex!.id)?.bestGuessMeters).toBeCloseTo(10, 0);
+    expect(final.stats.find((s) => s.playerId === alex!.id)?.bestRoundPoints).toBe(alexR1);
     expect(eventTypes(h)).toContain('gameFinished');
   });
 
   it('works solo (1 player) and with 8 players', async () => {
     for (const count of [1, 8]) {
       const h = createHarness();
-      const players = addPlayers(h, Array.from({ length: count }, (_, i) => `P${i + 1}`));
-      h.room.updateSettings(players[0]!.id, { rounds: 3, exploreSeconds: 15 });
+      const [first] = addPlayers(h, ['P1']);
+      h.room.updateSettings(first!.id, { rounds: 3, exploreSeconds: 15, capacity: 8 });
+      const players = [first!, ...addPlayers(h, Array.from({ length: count - 1 }, (_, i) => `P${i + 2}`))];
       await startAndEnterRound(h, players[0]!.id);
       for (let r = 0; r < 3; r++) {
         expect(h.room.phase).toBe('round');
         const real = h.locations[r]!.location;
         players.forEach((p, i) => h.room.submitGuess(p.id, offsetLatLng(real, 100 * i, i)));
         expect(h.room.phase).toBe('revealing');
-        h.clock.advance(REVEAL_SECONDS * 1000 + RESULTS_SECONDS * 1000);
+        skipRevealAndResults(h);
+        if (r < 2) enterExploration(h);
       }
       expect(h.room.phase).toBe('finished');
       expect(h.room.final?.ranking).toHaveLength(count);
       expect(h.room.final?.winnerIds).toEqual([players[0]?.id]);
+      expect(h.room.final?.stats.find((s) => s.playerId === players[0]!.id)?.maxStreak).toBe(3);
     }
+  });
+
+  it('holds the timer until every street view is ready, at most 4 s', async () => {
+    const h = createHarness();
+    const [host, guest] = addPlayers(h, ['Host', 'Guest']);
+    await h.room.startGame(host!.id);
+    h.clock.advance(TIMINGS.startingLogoMs);
+    const round = h.room.currentRound!;
+    h.room.panoReady(host!.id);
+    h.clock.advance(INTRO);
+    expect(round.exploreStartedAt).toBeNull();
+    const plannedEnd = round.exploreEndsAt;
+    h.clock.advance(1500);
+    expect(round.exploreStartedAt).toBeNull();
+    expect(round.exploreEndsAt).toBeGreaterThan(plannedEnd);
+    h.room.panoReady(guest!.id);
+    expect(round.exploreStartedAt).toBe(h.clock.now());
+    expect(round.exploreEndsAt).toBe(h.clock.now() + 30_000);
+
+    // Second round: the guest never reports → the timer starts after the maximum wait.
+    h.room.submitGuess(host!.id, round.location);
+    h.room.submitGuess(guest!.id, round.location);
+    skipRevealAndResults(h);
+    const round2 = h.room.currentRound!;
+    h.clock.advance(INTRO);
+    h.room.panoReady(host!.id);
+    h.clock.advance(TIMINGS.panoReadyMaxWaitMs - 1);
+    expect(round2.exploreStartedAt).toBeNull();
+    h.clock.advance(1);
+    expect(round2.exploreStartedAt).toBe(h.clock.now());
   });
 
   it('rejects guesses that are late, duplicate, invalid, or from the wrong phase', async () => {
     const h = createHarness();
     const [host, guest] = addPlayers(h, ['Host', 'Guest']);
-    expect(() => h.room.submitGuess(host!.id, { lat: 0, lng: 0 })).toThrow(/Too late/);
+    expect(() => h.room.submitGuess(host!.id, { lat: 0, lng: 0 })).toThrow(/Trop tard/);
     await startAndEnterRound(h, host!.id);
-    expect(() => h.room.submitGuess(host!.id, { lat: 91, lng: 0 })).toThrow(/coordinate/);
-    expect(() => h.room.submitGuess(host!.id, null as never)).toThrow(/coordinate/);
+    expect(() => h.room.submitGuess(host!.id, { lat: 91, lng: 0 })).toThrow(/coordonnée/);
+    expect(() => h.room.submitGuess(host!.id, null as never)).toThrow(/coordonnée/);
     h.room.submitGuess(host!.id, { lat: 43.3, lng: 5.37 });
-    expect(() => h.room.submitGuess(host!.id, { lat: 43.3, lng: 5.37 })).toThrow(/already/);
-    h.clock.advance(INTRO + 30_000 + GUESS_SECONDS * 1000);
+    expect(() => h.room.submitGuess(host!.id, { lat: 43.3, lng: 5.37 })).toThrow(/déjà/);
+    h.clock.advance(30_000 + GUESS);
     expect(h.room.phase).toBe('revealing');
-    expect(() => h.room.submitGuess(guest!.id, { lat: 43.3, lng: 5.37 })).toThrow(/Too late/);
-    expect(() => h.room.submitGuess('nobody', { lat: 43.3, lng: 5.37 })).toThrow(/not in this room/);
+    expect(() => h.room.submitGuess(guest!.id, { lat: 43.3, lng: 5.37 })).toThrow(/Trop tard/);
+    expect(() => h.room.submitGuess('nobody', { lat: 43.3, lng: 5.37 })).toThrow(/pas dans cette room/);
   });
 
   it('cannot start twice, needs the host, and nobody can join mid‑game', async () => {
     const h = createHarness();
     const [host, guest] = addPlayers(h, ['Host', 'Guest']);
-    await expect(h.room.startGame(guest!.id)).rejects.toThrow(/host/);
+    await expect(h.room.startGame(guest!.id)).rejects.toThrow(/hôte/);
     await h.room.startGame(host!.id);
-    await expect(h.room.startGame(host!.id)).rejects.toThrow(/already started/);
-    expect(() => h.room.addPlayer('token-late-xxxxxxxxxxxxxxxx', 'Late', 'fox')).toThrow(/in progress/);
+    await expect(h.room.startGame(host!.id)).rejects.toThrow(/déjà commencé/);
+    expect(() => h.room.addPlayer('token-late-xxxxxxxxxxxxxxxx', 'Late', 'diamond')).toThrow(/en cours/);
   });
 
   it('falls back to the lobby when locations cannot be loaded', async () => {
@@ -228,7 +284,7 @@ describe('game flow', () => {
     expect(eventTypes(h)).toContain('gameStartFailed');
   });
 
-  it('starts round 1 immediately if locations arrive after the countdown', async () => {
+  it('starts round 1 immediately if locations arrive after the logo beat', async () => {
     const h = createHarness();
     const [host] = addPlayers(h, ['Host']);
     const original = h.room['deps'].pickLocations;
@@ -249,7 +305,7 @@ describe('game flow', () => {
 describe('secrecy', () => {
   it('never exposes the location or other guesses before the reveal', async () => {
     const h = createHarness();
-    const [a, b] = addPlayers(h, ['A', 'B']);
+    const [a, b] = addPlayers(h, ['Ana', 'Bob']);
     await startAndEnterRound(h, a!.id);
     h.room.submitGuess(a!.id, { lat: 43.3, lng: 5.37 });
 
@@ -272,9 +328,9 @@ describe('secrecy', () => {
     expect(revealed.round?.reveal?.results.map((r) => r.playerId).sort()).toEqual([a!.id, b!.id].sort());
   });
 
-  it('does not expose round data in the lobby or during the countdown', async () => {
+  it('does not expose round data in the lobby or during the starting beat', async () => {
     const h = createHarness();
-    const [a] = addPlayers(h, ['A']);
+    const [a] = addPlayers(h, ['Ana']);
     expect(h.room.snapshotFor(a!.id).round).toBeNull();
     await h.room.startGame(a!.id);
     expect(h.room.snapshotFor(a!.id).round).toBeNull();
@@ -283,33 +339,41 @@ describe('secrecy', () => {
 });
 
 describe('connections', () => {
-  it('reveals once the remaining connected players have guessed (after a grace period)', async () => {
+  it('a disconnected player is removed after 20 s (toast) but can still come back', async () => {
     const h = createHarness();
-    const [a, b, c] = addPlayers(h, ['A', 'B', 'C']);
+    const [a, b, c] = addPlayers(h, ['Ana', 'Bob', 'Cat']);
     await startAndEnterRound(h, a!.id);
     h.room.submitGuess(a!.id, { lat: 43.3, lng: 5.37 });
     h.room.submitGuess(b!.id, { lat: 43.3, lng: 5.37 });
     h.room.markDisconnected(c!.id);
     expect(h.room.phase).toBe('round');
-    h.clock.advance(4999);
+    h.clock.advance(TIMINGS.disconnectRemoveMs - 1);
     expect(h.room.phase).toBe('round');
+    expect(h.room.players.get(c!.id)?.left).toBe(false);
     h.clock.advance(1);
+    expect(h.room.players.get(c!.id)?.left).toBe(true);
+    expect(eventTypes(h).filter((t) => t === 'playerLeft')).toHaveLength(1);
+    // The remaining connected players had all guessed → reveal.
     expect(h.room.phase).toBe('revealing');
-    const snapshot = h.room.snapshotFor(a!.id);
-    expect(snapshot.players.find((p) => p.id === c!.id)?.connected).toBe(false);
+    expect(h.room.snapshotFor(a!.id).round?.reveal?.results).toHaveLength(2);
+
+    h.room.rejoin(c!.token);
+    expect(h.room.players.get(c!.id)?.left).toBe(false);
+    expect(h.room.players.get(c!.id)?.connected).toBe(true);
+    expect(eventTypes(h)).toContain('playerReconnected');
   });
 
-  it('a quick reconnection cancels the early reveal and lets the player guess', async () => {
+  it('a quick reconnection keeps the player in the round', async () => {
     const h = createHarness();
-    const [a, b] = addPlayers(h, ['A', 'B']);
+    const [a, b] = addPlayers(h, ['Ana', 'Bob']);
     await startAndEnterRound(h, a!.id);
     h.room.submitGuess(a!.id, { lat: 43.3, lng: 5.37 });
     h.room.markDisconnected(b!.id);
-    h.clock.advance(2000);
+    h.clock.advance(5000);
     h.room.rejoin(b!.token);
-    h.clock.advance(4000);
+    h.clock.advance(TIMINGS.disconnectRemoveMs);
     expect(h.room.phase).toBe('round');
-    expect(eventTypes(h)).toContain('playerReconnected');
+    expect(h.room.players.get(b!.id)?.left).toBe(false);
     h.room.submitGuess(b!.id, { lat: 43.3, lng: 5.37 });
     expect(h.room.phase).toBe('revealing');
   });
@@ -318,32 +382,29 @@ describe('connections', () => {
     const h = createHarness();
     const [host, guest] = addPlayers(h, ['Host', 'Guest']);
     h.room.markDisconnected(host!.id);
-    h.clock.advance(9000);
+    h.clock.advance(TIMINGS.hostGraceMs - 1000);
     expect(h.room.hostId).toBe(host?.id);
     h.room.rejoin(host!.token);
     h.clock.advance(5000);
     expect(h.room.hostId).toBe(host?.id);
 
     h.room.markDisconnected(host!.id);
-    h.clock.advance(10_000);
+    h.clock.advance(TIMINGS.hostGraceMs);
     expect(h.room.hostId).toBe(guest?.id);
     expect(h.room.players.get(guest!.id)?.isHost).toBe(true);
     expect(h.room.players.get(host!.id)?.isHost).toBe(false);
     expect(eventTypes(h)).toContain('hostChanged');
-    // The old host comes back as a regular player
     h.room.rejoin(host!.token);
     expect(h.room.hostId).toBe(guest?.id);
   });
 
-  it('keeps the host when they are the only player', () => {
+  it('keeps the host when they are the only player, and the room becomes idle', () => {
     const h = createHarness();
     const [host] = addPlayers(h, ['Host']);
     h.room.markDisconnected(host!.id);
-    h.clock.advance(20_000);
-    expect(h.room.hostId).toBe(host?.id);
-    expect(h.room.isIdle(15 * 60_000)).toBe(false);
-    h.clock.advance(15 * 60_000);
-    expect(h.room.isIdle(15 * 60_000)).toBe(true);
+    h.clock.advance(TIMINGS.disconnectRemoveMs);
+    // Lobby: the player is simply removed and the room emptied.
+    expect(h.emptied).toBe(true);
   });
 
   it('a player leaving mid‑game is marked as gone, the game continues, and rematch drops them', async () => {
@@ -358,16 +419,22 @@ describe('connections', () => {
     h.room.submitGuess(guest!.id, { lat: 43.3, lng: 5.37 });
     h.room.submitGuess(third!.id, { lat: 43.3, lng: 5.37 });
     expect(h.room.phase).toBe('revealing');
-    expect(() => h.room.submitGuess(host!.id, { lat: 43.3, lng: 5.37 })).toThrow(/not in this room/);
-    for (let r = 0; r < 3; r++) h.clock.advance(60_000 + REVEAL_SECONDS * 1000 + RESULTS_SECONDS * 1000);
+    expect(() => h.room.submitGuess(host!.id, { lat: 43.3, lng: 5.37 })).toThrow(/pas dans cette room/);
+    for (let r = 0; r < 3; r++) {
+      skipRevealAndResults(h);
+      if (r < 2) {
+        enterExploration(h);
+        h.clock.advance(30_000 + GUESS);
+      }
+    }
     expect(h.room.phase).toBe('finished');
     expect(h.room.final?.ranking.map((e) => e.playerId)).not.toContain(host?.id);
 
-    h.room.rematch(guest!.id, false);
+    await h.room.rematch(guest!.id, true);
     expect(h.room.phase).toBe('waiting');
     expect(h.room.players.has(host!.id)).toBe(false);
-    expect(h.room.players.get(guest!.id)?.totalScore).toBe(0);
     expect(h.room.gameNumber).toBe(1);
+    expect(eventTypes(h)).toContain('newCityRequested');
   });
 
   it('the last active player leaving a running game empties the room', async () => {
@@ -380,32 +447,37 @@ describe('connections', () => {
 });
 
 describe('rematch', () => {
-  it('resets scores, keeps players, can pick a new city, avoids previous locations', async () => {
+  it('restarts right away after the beat, keeps players, resets scores, avoids previous locations', async () => {
     const h = createHarness();
     const [host, guest] = addPlayers(h, ['Host', 'Guest']);
     h.room.updateSettings(host!.id, { rounds: 3 });
-    expect(() => h.room.rematch(host!.id, false)).toThrow(/not over/);
+    await expect(h.room.rematch(host!.id, false)).rejects.toThrow(/pas finie/);
     await startAndEnterRound(h, host!.id);
     for (let r = 0; r < 3; r++) {
       h.room.submitGuess(host!.id, h.locations[r]!.location);
       h.room.submitGuess(guest!.id, offsetLatLng(h.locations[r]!.location, 2000, 1));
-      h.clock.advance(REVEAL_SECONDS * 1000 + RESULTS_SECONDS * 1000);
+      skipRevealAndResults(h);
+      if (r < 2) enterExploration(h);
     }
     expect(h.room.phase).toBe('finished');
-    expect(h.room.players.get(host!.id)?.totalScore).toBe(3300);
-    expect(() => h.room.rematch(guest!.id, true)).toThrow(/host/);
+    expect(h.room.players.get(host!.id)?.totalScore).toBe(1100 + 1100 + 2100); // exact guesses: 1000 (+100) ×2, last doubled
+    expect(h.room.final?.stats.find((s) => s.playerId === host!.id)?.maxStreak).toBe(3);
+    await expect(h.room.rematch(guest!.id, false)).rejects.toThrow(/hôte/);
 
     const previousLocations = h.locations.map((l) => l.location);
-    h.room.rematch(host!.id, true);
-    expect(h.room.phase).toBe('waiting');
-    expect(h.room.settings.cityId).not.toBe('marseille');
-    expect(h.room.players.size).toBe(2);
+    const promise = h.room.rematch(host!.id, false);
+    expect(h.room.phase).toBe('starting');
+    expect(h.room.rematchBy).toBe('Host');
+    expect(h.room.phaseEndsAt).toBe(h.clock.now() + TIMINGS.rematchDelayMs);
+    await promise;
     expect(h.room.players.get(host!.id)?.totalScore).toBe(0);
     expect(h.room.snapshotFor(host!.id).final).toBeNull();
-    expect(h.room.snapshotFor(host!.id).round).toBeNull();
-
-    await startAndEnterRound(h, host!.id);
+    expect(h.room.snapshotFor(host!.id).rematchBy).toBe('Host');
     expect(h.room.gameNumber).toBe(2);
     expect(h.pickerCalls[1]?.exclude).toEqual(previousLocations);
+    h.clock.advance(TIMINGS.rematchDelayMs);
+    expect(h.room.phase).toBe('round');
+    expect(h.room.snapshotFor(host!.id).rematchBy).toBeNull();
+    expect(eventTypes(h)).toContain('rematchRequested');
   });
 });

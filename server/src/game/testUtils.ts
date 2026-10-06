@@ -1,4 +1,4 @@
-import { offsetLatLng, type City, type Difficulty, type LatLng, type RoomEvent } from '@cityguess/shared';
+import { RESULTS_PHASE_MS, TIMINGS, offsetLatLng, type City, type Difficulty, type LatLng, type RoomEvent } from '@cityguess/shared';
 import { FakeClock } from './clock.js';
 import { GameRoom, type PlayerState } from './GameRoom.js';
 import type { LocationPicker, ResolvedLocation } from './locations.js';
@@ -55,14 +55,31 @@ export function createHarness(options: { code?: string; failWith?: Error } = {})
   return h;
 }
 
-export function addPlayers(h: Harness, names: string[]): PlayerState[] {
-  return names.map((name, i) => h.room.addPlayer(`token-${name}-${'x'.repeat(16)}`, name, i % 2 === 0 ? 'fox' : 'panda'));
+/** Adds players (all marked ready, as the client does once street view is loadable). */
+export function addPlayers(h: Harness, names: string[], ready = true): PlayerState[] {
+  return names.map((name) => {
+    const player = h.room.addPlayer(`token-${name}-${'x'.repeat(16)}`, name, 'diamond');
+    if (ready) h.room.setReady(player.id, true);
+    return player;
+  });
 }
 
-/** Starts the game and advances through the starting countdown into round 1. */
+/** Starts the game and advances through the logo beat and the round intro into exploration. */
 export async function startAndEnterRound(h: Harness, hostId: string): Promise<void> {
   await h.room.startGame(hostId);
-  h.clock.advance(3000);
+  h.clock.advance(TIMINGS.startingLogoMs);
+  enterExploration(h);
+}
+
+/** Every active player reports their street view, then the intro ends: the exploration timer starts. */
+export function enterExploration(h: Harness): void {
+  for (const p of h.room.activePlayers()) if (p.connected) h.room.panoReady(p.id);
+  h.clock.advance(TIMINGS.intro.totalMs);
+}
+
+/** Advances through reveal + results into the next phase. */
+export function skipRevealAndResults(h: Harness): void {
+  h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs + RESULTS_PHASE_MS);
 }
 
 export function eventTypes(h: Harness): string[] {

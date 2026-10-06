@@ -82,9 +82,9 @@ export class PostgresPersistence implements Persistence {
       );
       for (const r of rounds) {
         await this.pool.query(
-          `insert into rounds (id, game_id, index, city_id, zone_name, provider, pano_id, lat, lng)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [r.id, gameId, r.index, r.cityId, r.zoneName, r.provider, r.panoId, r.location.lat, r.location.lng],
+          `insert into rounds (id, game_id, index, city_id, zone_name, provider, pano_id, lat, lng, multiplier)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [r.id, gameId, r.index, r.cityId, r.zoneName, r.provider, r.panoId, r.location.lat, r.location.lng, r.multiplier],
         );
       }
       for (const playerId of players) {
@@ -100,10 +100,10 @@ export class PostgresPersistence implements Persistence {
     const roundId = round.id;
     this.enqueue('guessSubmitted', async () => {
       await this.pool.query(
-        `insert into guesses (round_id, player_id, lat, lng, distance_m, score, bonus, time_ms, submitted_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9 / 1000.0))
+        `insert into guesses (round_id, player_id, lat, lng, distance_m, score, bonus, time_ms, auto, submitted_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, to_timestamp($10 / 1000.0))
          on conflict (round_id, player_id) do nothing`,
-        [roundId, guess.playerId, guess.position.lat, guess.position.lng, guess.distanceMeters, guess.base, guess.bonus, guess.timeMs, guess.submittedAt],
+        [roundId, guess.playerId, guess.position.lat, guess.position.lng, guess.distanceMeters, guess.base, guess.bonus, guess.timeMs, guess.auto, guess.submittedAt],
       );
     });
   }
@@ -115,7 +115,7 @@ export class PostgresPersistence implements Persistence {
     this.enqueue('roundRevealed', async () => {
       await this.pool.query(
         'update rounds set explore_ends_at = to_timestamp($2 / 1000.0), revealed_at = to_timestamp($3 / 1000.0) where id = $1',
-        [roundId, round.exploreEndsAt, round.revealedAt ?? Date.now()],
+        [roundId, round.exploreEndsAt, round.revealStartsAt ?? Date.now()],
       );
       if (!gameId) return;
       for (const t of totals) {

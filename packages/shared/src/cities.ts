@@ -22,8 +22,10 @@ export interface City {
   bounds: [number, number, number, number];
   /** Sanity limit: a resolved panorama further than this from the center is rejected. */
   maxRadiusMeters: number;
-  /** Scoring decay scale, bigger cities are more forgiving. */
-  scoreScaleMeters: number;
+  /** oklch hue of the city card gradient (design handoff §16). */
+  hue: number;
+  /** Difficulty rating shown on the city card, 1–4 stars. */
+  stars: 1 | 2 | 3 | 4;
   zones: CityZone[];
 }
 
@@ -37,6 +39,8 @@ const z = (name: string, lat: number, lng: number, radiusMeters: number, difficu
 export const CITIES: readonly City[] = [
   {
     id: 'marseille',
+    hue: 60,
+    stars: 2,
     name: 'Marseille',
     country: 'France',
     countryCode: 'FR',
@@ -44,7 +48,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 43.2965, lng: 5.3698 },
     bounds: [43.21, 5.32, 43.37, 5.49],
     maxRadiusMeters: 14_000,
-    scoreScaleMeters: 2500,
     zones: [
       z('Vieux-Port', 43.295, 5.3745, 400, 'easy'),
       z('Le Panier', 43.299, 5.3685, 300, 'easy'),
@@ -70,6 +73,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'paris',
+    hue: 300,
+    stars: 2,
     name: 'Paris',
     country: 'France',
     countryCode: 'FR',
@@ -77,7 +82,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 48.8566, lng: 2.3522 },
     bounds: [48.815, 2.225, 48.905, 2.47],
     maxRadiusMeters: 12_000,
-    scoreScaleMeters: 2500,
     zones: [
       z('Le Marais', 48.858, 2.359, 400, 'easy'),
       z('Quartier Latin', 48.85, 2.344, 400, 'easy'),
@@ -108,6 +112,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'lyon',
+    hue: 130,
+    stars: 3,
     name: 'Lyon',
     country: 'France',
     countryCode: 'FR',
@@ -115,7 +121,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 45.764, lng: 4.8357 },
     bounds: [45.715, 4.77, 45.81, 4.92],
     maxRadiusMeters: 10_000,
-    scoreScaleMeters: 2200,
     zones: [
       z('Bellecour', 45.758, 4.832, 350, 'easy'),
       z('Vieux Lyon', 45.762, 4.827, 300, 'easy'),
@@ -138,6 +143,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'nice',
+    hue: 80,
+    stars: 3,
     name: 'Nice',
     country: 'France',
     countryCode: 'FR',
@@ -145,7 +152,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 43.7034, lng: 7.2663 },
     bounds: [43.66, 7.19, 43.75, 7.32],
     maxRadiusMeters: 9000,
-    scoreScaleMeters: 1800,
     zones: [
       z('Vieux-Nice', 43.696, 7.276, 300, 'easy'),
       z('Masséna', 43.6965, 7.268, 350, 'easy'),
@@ -168,6 +174,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'london',
+    hue: 240,
+    stars: 3,
     name: 'London',
     country: 'United Kingdom',
     countryCode: 'GB',
@@ -175,7 +183,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 51.5074, lng: -0.1278 },
     bounds: [51.36, -0.33, 51.61, 0.06],
     maxRadiusMeters: 20_000,
-    scoreScaleMeters: 3000,
     zones: [
       z('Soho', 51.513, -0.13, 450, 'easy'),
       z('Westminster', 51.5, -0.125, 400, 'easy'),
@@ -207,6 +214,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'barcelona',
+    hue: 40,
+    stars: 2,
     name: 'Barcelona',
     country: 'Spain',
     countryCode: 'ES',
@@ -214,7 +223,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 41.3874, lng: 2.1686 },
     bounds: [41.34, 2.09, 41.46, 2.23],
     maxRadiusMeters: 10_000,
-    scoreScaleMeters: 2200,
     zones: [
       z('Barri Gòtic', 41.383, 2.177, 300, 'easy'),
       z('El Born', 41.385, 2.183, 300, 'easy'),
@@ -241,6 +249,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'rome',
+    hue: 90,
+    stars: 2,
     name: 'Rome',
     country: 'Italy',
     countryCode: 'IT',
@@ -248,7 +258,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 41.9028, lng: 12.4964 },
     bounds: [41.82, 12.4, 41.96, 12.58],
     maxRadiusMeters: 12_000,
-    scoreScaleMeters: 2500,
     zones: [
       z('Pantheon', 41.899, 12.476, 400, 'easy'),
       z('Trastevere', 41.888, 12.47, 350, 'easy'),
@@ -278,6 +287,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'berlin',
+    hue: 170,
+    stars: 4,
     name: 'Berlin',
     country: 'Germany',
     countryCode: 'DE',
@@ -285,7 +296,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 52.52, lng: 13.405 },
     bounds: [52.42, 13.17, 52.61, 13.6],
     maxRadiusMeters: 20_000,
-    scoreScaleMeters: 3000,
     zones: [
       z('Alexanderplatz', 52.521, 13.413, 450, 'easy'),
       z('Hackescher Markt', 52.524, 13.402, 350, 'easy'),
@@ -315,6 +325,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'new-york',
+    hue: 200,
+    stars: 3,
     name: 'New York',
     country: 'United States',
     countryCode: 'US',
@@ -322,7 +334,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 40.7128, lng: -74.006 },
     bounds: [40.6, -74.1, 40.88, -73.78],
     maxRadiusMeters: 25_000,
-    scoreScaleMeters: 3500,
     zones: [
       z('Times Square', 40.758, -73.9855, 400, 'easy'),
       z('SoHo', 40.723, -74.0, 350, 'easy'),
@@ -355,6 +366,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'los-angeles',
+    hue: 330,
+    stars: 4,
     name: 'Los Angeles',
     country: 'United States',
     countryCode: 'US',
@@ -362,7 +375,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 34.0522, lng: -118.2437 },
     bounds: [33.75, -118.55, 34.28, -117.95],
     maxRadiusMeters: 45_000,
-    scoreScaleMeters: 5000,
     zones: [
       z('Downtown', 34.045, -118.25, 500, 'easy'),
       z('Hollywood', 34.101, -118.33, 500, 'easy'),
@@ -394,6 +406,8 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'tokyo',
+    hue: 20,
+    stars: 4,
     name: 'Tokyo',
     country: 'Japan',
     countryCode: 'JP',
@@ -401,7 +415,6 @@ export const CITIES: readonly City[] = [
     center: { lat: 35.6762, lng: 139.6503 },
     bounds: [35.55, 139.55, 35.8, 139.9],
     maxRadiusMeters: 25_000,
-    scoreScaleMeters: 4000,
     zones: [
       z('Shibuya', 35.659, 139.701, 400, 'easy'),
       z('Shinjuku', 35.69, 139.7, 450, 'easy'),

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
-import type { AckResult, ClientToServerEvents, RoomJoined, RoomSnapshot, ServerToClientEvents } from '@cityguess/shared';
+import { TIMINGS, type AckResult, type ClientToServerEvents, type RoomJoined, type RoomSnapshot, type ServerToClientEvents } from '@cityguess/shared';
 import { createApp, type GameApp } from '../app.js';
 import { FakeClock } from '../game/clock.js';
 import { MockStreetViewResolver } from '../streetview/mock.js';
@@ -87,13 +87,13 @@ describe('socket transport', () => {
 
   it('plays a full game across 4 real sockets, with reconnection', async () => {
     const host = await client('host-token-1234567890abcdef');
-    const created = await request<RoomJoined>(host, (ack) => host.emit('room:create', { name: 'Alex', avatar: 'fox' }, ack));
+    const created = await request<RoomJoined>(host, (ack) => host.emit('room:create', { name: 'Alex', avatar: 'diamond', settings: { capacity: 4 } }, ack));
     expect(created.code).toMatch(/^[A-Z2-9]{5}$/);
 
     const guests = await Promise.all(['Yass', 'Sam', 'Adam'].map((n, i) => client(`guest-token-${i}-1234567890abcdef`)));
     const joined = await Promise.all(
       guests.map((g, i) =>
-        request<RoomJoined>(g, (ack) => g.emit('room:join', { code: created.code.toLowerCase(), name: ['Yass', 'Sam', 'Adam'][i]!, avatar: 'panda' }, ack)),
+        request<RoomJoined>(g, (ack) => g.emit('room:join', { code: created.code.toLowerCase(), name: ['Yass', 'Sam', 'Adam'][i]!, avatar: 'circle' }, ack)),
       ),
     );
     expect(joined.every((j) => j.code === created.code)).toBe(true);
@@ -103,10 +103,15 @@ describe('socket transport', () => {
     const lobby = await nextState(guests[2]!, (s) => s.settings.rounds === 3 && s.players.length === 4);
     expect(lobby.players.map((p) => p.name)).toEqual(['Alex', 'Yass', 'Sam', 'Adam']);
     expect(lobby.you).toBe(joined[2]?.playerId);
+    expect(new Set(lobby.players.map((p) => p.avatar)).size).toBe(4);
+
+    await expect(request(host, (ack) => host.emit('game:start', ack))).rejects.toThrow(/NOT_READY/);
+    await Promise.all([host, ...guests].map((s) => request(s, (ack) => s.emit('room:setReady', { ready: true }, ack))));
+    await nextState(host, (s) => s.players.every((p) => p.isReady));
 
     await request(host, (ack) => host.emit('game:start', ack));
     await tick();
-    clock.advance(3000);
+    clock.advance(TIMINGS.startingLogoMs);
     const round = await nextState(host, (s) => s.phase === 'round');
     expect(round.round?.number).toBe(1);
     expect(round.round?.panoId).toMatch(/^mock-/);
@@ -114,6 +119,7 @@ describe('socket transport', () => {
 
     for (let r = 0; r < 3; r++) {
       const everyone = [host, ...guests];
+      await Promise.all(everyone.map((s) => request(s, (ack) => s.emit('game:panoReady', ack))));
       await Promise.all(
         everyone.map((s, i) =>
           request(s, (ack) => s.emit('game:submitGuess', { position: { lat: 48.85 + i * 0.001, lng: 2.35 } }, ack)),
@@ -121,6 +127,7 @@ describe('socket transport', () => {
       );
       const revealed = await nextState(host, (s) => s.phase === 'revealing' && s.round?.index === r);
       expect(revealed.round?.reveal?.results).toHaveLength(4);
+      expect(revealed.round?.reveal?.standings).toHaveLength(4);
       expect(revealed.round?.reveal?.location.lat).toBeGreaterThan(48.8);
       await expect(request(host, (ack) => host.emit('game:submitGuess', { position: { lat: 48.85, lng: 2.35 } }, ack))).rejects.toThrow(/TOO_LATE/);
 
@@ -138,13 +145,13 @@ describe('socket transport', () => {
         expect(restored.players.find((p) => p.name === 'Sam')?.totalScore).toBeGreaterThan(0);
       }
 
-      clock.advance(8000);
+      clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
       await nextState(host, (s) => s.phase === 'results');
       if (r < 2) {
         await request(host, (ack) => host.emit('game:nextRound', ack));
         await nextState(host, (s) => s.phase === 'round' && s.round?.index === r + 1);
       } else {
-        clock.advance(12_000);
+        clock.advance(TIMINGS.results.leaderboardMs + TIMINGS.results.autoAdvanceMs);
       }
     }
     const final = await nextState(host, (s) => s.phase === 'finished');
@@ -152,19 +159,21 @@ describe('socket transport', () => {
     expect(final.final?.winnerIds.length).toBeGreaterThan(0);
 
     await request(host, (ack) => host.emit('game:rematch', { newCity: false }, ack));
-    const lobbyAgain = await nextState(guests[0]!, (s) => s.phase === 'waiting');
-    expect(lobbyAgain.players.every((p) => p.totalScore === 0)).toBe(true);
+    const beat = await nextState(guests[0]!, (s) => s.phase === 'starting' && s.rematchBy === 'Alex');
+    expect(beat.players.every((p) => p.totalScore === 0)).toBe(true);
+    clock.advance(TIMINGS.rematchDelayMs);
+    await nextState(guests[0]!, (s) => s.phase === 'round' && s.gameNumber === 2);
 
     await request(guests[0]!, (ack) => guests[0]!.emit('room:leave', ack));
-    const afterLeave = await nextState(host, (s) => s.players.length === 3);
-    expect(afterLeave.players.map((p) => p.name)).toEqual(['Alex', 'Sam', 'Adam']);
+    const afterLeave = await nextState(host, (s) => s.players.some((p) => p.name === 'Yass' && p.left));
+    expect(afterLeave.players.filter((p) => !p.left).map((p) => p.name)).toEqual(['Alex', 'Sam', 'Adam']);
   });
 
   it('returns clear errors for unknown rooms and bad input', async () => {
     const s = await client('errors-token-1234567890abcdef');
-    await expect(request(s, (ack) => s.emit('room:join', { code: 'ZZZZZ', name: 'X', avatar: 'fox' }, ack))).rejects.toThrow(/ROOM_NOT_FOUND/);
-    await expect(request(s, (ack) => s.emit('room:join', { code: 'AB', name: 'X', avatar: 'fox' }, ack))).rejects.toThrow(/INVALID_INPUT/);
-    await expect(request(s, (ack) => s.emit('room:create', { name: '', avatar: 'fox' }, ack))).rejects.toThrow(/INVALID_INPUT/);
+    await expect(request(s, (ack) => s.emit('room:join', { code: 'ZZZZZ', name: 'Xavier', avatar: 'diamond' }, ack))).rejects.toThrow(/ROOM_NOT_FOUND/);
+    await expect(request(s, (ack) => s.emit('room:join', { code: 'AB', name: 'Xavier', avatar: 'diamond' }, ack))).rejects.toThrow(/INVALID_INPUT/);
+    await expect(request(s, (ack) => s.emit('room:create', { name: 'X', avatar: 'diamond' }, ack))).rejects.toThrow(/INVALID_INPUT/);
     await expect(request(s, (ack) => s.emit('game:start', ack))).rejects.toThrow(/NOT_IN_ROOM/);
     await expect(request(s, (ack) => s.emit('room:rejoin', { code: '' }, ack))).rejects.toThrow(/ROOM_NOT_FOUND/);
   });

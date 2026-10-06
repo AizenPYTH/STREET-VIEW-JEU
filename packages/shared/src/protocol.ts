@@ -17,6 +17,7 @@ export type ErrorCode =
   | 'ALREADY_GUESSED'
   | 'TOO_LATE'
   | 'LOCATIONS_UNAVAILABLE'
+  | 'NOT_READY'
   | 'RATE_LIMITED'
   | 'INTERNAL';
 
@@ -32,7 +33,9 @@ export interface ProfilePayload {
   avatar: string;
 }
 
-export interface CreateRoomPayload extends ProfilePayload {}
+export interface CreateRoomPayload extends ProfilePayload {
+  settings?: Partial<GameSettings>;
+}
 
 export interface JoinRoomPayload extends ProfilePayload {
   code: string;
@@ -57,8 +60,9 @@ export interface ClientToServerEvents {
   'room:rejoin': (payload: RejoinRoomPayload, ack: (result: AckResult<RoomJoined>) => void) => void;
   'room:leave': (ack: (result: AckResult) => void) => void;
   'room:updateSettings': (payload: Partial<GameSettings>, ack: (result: AckResult) => void) => void;
-  'room:toggleReady': (ack: (result: AckResult) => void) => void;
+  'room:setReady': (payload: { ready: boolean }, ack: (result: AckResult) => void) => void;
   'game:start': (ack: (result: AckResult) => void) => void;
+  'game:panoReady': (ack: (result: AckResult) => void) => void;
   'game:submitGuess': (payload: SubmitGuessPayload, ack: (result: AckResult) => void) => void;
   'game:nextRound': (ack: (result: AckResult) => void) => void;
   'game:rematch': (payload: { newCity: boolean }, ack: (result: AckResult) => void) => void;

@@ -26,7 +26,7 @@ create index if not exists rooms_created_at_idx on rooms (created_at);
 create table if not exists players (
   id        uuid primary key,
   room_id   uuid not null references rooms (id) on delete cascade,
-  name      text not null check (char_length(name) between 1 and 16),
+  name      text not null check (char_length(name) between 2 and 12),
   avatar    text not null,
   color     text not null,
   joined_at timestamptz not null default now()
@@ -63,6 +63,7 @@ create table if not exists rounds (
   zone_name       text not null,
   provider        text not null check (provider in ('google', 'mock')),
   pano_id         text not null,
+  multiplier      integer not null default 1 check (multiplier >= 1),
   -- The real location. Never exposed to clients before the reveal.
   lat             double precision not null check (lat between -90 and 90),
   lng             double precision not null check (lng between -180 and 180),
@@ -82,6 +83,8 @@ create table if not exists guesses (
   score        integer not null check (score >= 0),
   bonus        integer not null default 0 check (bonus >= 0),
   time_ms      integer not null check (time_ms >= 0),
+  -- true when the server placed the guess at the city centre because the player ran out of time
+  auto         boolean not null default false,
   submitted_at timestamptz not null default now(),
   unique (round_id, player_id)
 );

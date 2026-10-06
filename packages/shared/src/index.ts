@@ -6,3 +6,4 @@ export * from './roomCode.js';
 export * from './cities.js';
 export * from './protocol.js';
 export * from './ranking.js';
+export * from './timings.js';
