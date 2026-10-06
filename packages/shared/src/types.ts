@@ -148,6 +148,7 @@ export type RoomEventType =
   | 'playerReady'
   | 'guessLocked'
   | 'gameStarted'
+  | 'gameStartFailed'
   | 'roundStarted'
   | 'roundRevealed'
   | 'gameFinished'
