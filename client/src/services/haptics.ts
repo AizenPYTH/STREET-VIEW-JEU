@@ -9,6 +9,8 @@ const PATTERNS = {
   selection: 6,
   success: [12, 40, 18],
   error: [30, 50, 30],
+  overtake: [10, 30, 10, 30, 20],
+  winner: [20, 60, 20, 60, 60],
 } satisfies Record<string, Pattern>;
 
 export type HapticKind = keyof typeof PATTERNS;

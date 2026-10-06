@@ -96,6 +96,8 @@ export interface Standing {
   roundPoints: number;
   /** Consecutive rounds (including this one) where the player had the best round score. */
   streak: number;
+  /** Streak before this round, to notice a broken one. */
+  previousStreak: number;
   /** Points behind the leader (0 for the leader). */
   gapToLeader: number;
 }
@@ -150,10 +152,20 @@ export interface PlayerStats {
   maxStreak: number;
 }
 
+export interface GameHighlights {
+  /** Closest non‑auto guess of the whole game. */
+  closest: { playerId: string; distanceMeters: number; roundNumber: number } | null;
+  /** Fastest non‑auto guess of the whole game. */
+  fastest: { playerId: string; timeMs: number; roundNumber: number } | null;
+  /** Longest streak of the game. */
+  streak: { playerId: string; length: number } | null;
+}
+
 export interface FinalResults {
   ranking: RankingEntry[];
   winnerIds: string[];
   stats: PlayerStats[];
+  highlights: GameHighlights;
   /** Server timestamp at which the final sequence starts. */
   startsAt: number;
 }

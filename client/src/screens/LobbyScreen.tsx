@@ -17,7 +17,10 @@ export function LobbyScreen({ snapshot }: { snapshot: RoomSnapshot }) {
   const [starting, setStarting] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [svAttempt, setSvAttempt] = useState(0);
+  const [aloneForAWhile, setAloneForAWhile] = useState(false);
   const availability = useStreetViewReady(svAttempt);
+  const startError = useGameStore((s) => s.startError);
+  const setStartError = useGameStore((s) => s.setStartError);
   const me = snapshot.players.find((p) => p.id === snapshot.you);
   const isHost = snapshot.hostId === snapshot.you;
   const city = getCity(snapshot.settings.cityId);
@@ -33,12 +36,25 @@ export function LobbyScreen({ snapshot }: { snapshot: RoomSnapshot }) {
     if (availability === 'ready' && me && !me.isReady) api.setReady(true).catch(() => undefined);
   }, [availability, me]);
 
+  // Empty state: nobody joined for a while (phase 2 §40).
+  useEffect(() => {
+    if (active.length > 1) {
+      setAloneForAWhile(false);
+      return;
+    }
+    const t = window.setTimeout(() => setAloneForAWhile(true), 45_000);
+    return () => window.clearTimeout(t);
+  }, [active.length]);
+
   const start = async (): Promise<void> => {
     setStarting(true);
+    setStartError(null);
     try {
       await api.startGame();
     } catch (e) {
-      showToast(e instanceof RequestError ? e.message : 'Impossible de lancer la partie', 'muted', 2500);
+      const message = e instanceof RequestError ? e.message : 'Impossible de lancer la partie';
+      if (e instanceof RequestError && e.code === 'LOCATIONS_UNAVAILABLE') setStartError(message);
+      else showToast(message, 'muted', 2500);
       playSound('error');
       haptic('error');
     } finally {
@@ -94,6 +110,14 @@ export function LobbyScreen({ snapshot }: { snapshot: RoomSnapshot }) {
           <button type="button" className="notice notice--danger" onClick={() => setSvAttempt((a) => a + 1)}>
             La vue rue n'a pas chargé · Réessayer
           </button>
+        )}
+        {startError && (
+          <p className="notice notice--danger" data-testid="start-error">
+            {startError}
+          </p>
+        )}
+        {aloneForAWhile && isHost && !startError && (
+          <p className="notice">Personne n'a encore rejoint. Partage le code — ou lance en solo pour t'entraîner.</p>
         )}
       </div>
       <div className="screen__footer">

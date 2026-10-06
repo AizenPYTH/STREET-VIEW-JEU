@@ -11,8 +11,9 @@ interface Phone {
   page: Page;
 }
 
-async function phone(browser: Browser, name: string): Promise<Phone> {
+async function phone(browser: Browser, name: string, options: { onboarding?: boolean } = {}): Promise<Phone> {
   const context = await browser.newContext();
+  if (!options.onboarding) await context.addInitScript(() => window.localStorage.setItem('cg.onboarding', 'done'));
   const page = await context.newPage();
   page.on('pageerror', (error) => console.error(`[${name}] page error:`, error.message));
   return { name, context, page };
@@ -57,6 +58,7 @@ test('four phones play a complete game, reconnect mid-round, then rematch', asyn
   await shot(host, '01-home');
   await host.page.getByTestId('create-room').click();
   await host.page.getByTestId('name-input').fill('Alex');
+  await host.page.getByTestId('toggle-options').click();
   await host.page.getByRole('radio', { name: '15 s' }).click();
   await host.page.getByLabel('Manches').getByRole('radio', { name: '3', exact: true }).click();
   await shot(host, '02-create');
@@ -126,14 +128,19 @@ test('four phones play a complete game, reconnect mid-round, then rematch', asyn
   // ── REVEAL (scripted) → SCORES ──
   for (const p of everyone) await expect(p.page.getByTestId('reveal')).toBeVisible({ timeout: 10_000 });
   await expect(host.page.getByTestId('truth-label')).toBeVisible();
-  await expect(host.page.getByTestId('distances')).toBeVisible();
-  await expect(host.page.getByTestId('distances').locator('.dist')).toHaveCount(4);
+  // Suspense: the players drop one by one, the round winner last, then the callout.
+  await expect(host.page.getByTestId('distances').locator('.dist')).toHaveCount(1, { timeout: 5000 });
+  await expect(host.page.getByTestId('distances').locator('.dist')).toHaveCount(4, { timeout: 5000 });
+  await expect(host.page.getByTestId('round-winner')).toBeVisible();
+  await expect(host.page.getByTestId('distances').locator('.dist--winner')).toHaveCount(1);
   await shot(host, '09-reveal');
   for (const p of everyone) await expect(p.page.getByTestId('scores')).toBeVisible({ timeout: 10_000 });
   await expect(host.page.getByTestId('score-rows').locator('.score-row')).toHaveCount(4);
   await expect(host.page.getByTestId('ranking')).toBeVisible();
   await expect(host.page.getByTestId('leaderboard').locator('.lb__row')).toHaveCount(4);
   await expect(host.page.getByTestId('lb-Alex')).toContainText(/LEADER|−/);
+  await expect(host.page.getByTestId('me-line')).toBeVisible();
+  await expect(host.page.getByTestId('score-Alex')).toContainText('→');
   await shot(host, '10-scores');
   await expect(yass.page.getByText("En attente de l'hôte…")).toBeVisible();
   await host.page.getByTestId('next-round').click();
@@ -143,7 +150,8 @@ test('four phones play a complete game, reconnect mid-round, then rematch', asyn
   for (const p of everyone) await expect(p.page.getByTestId('guess')).toBeVisible({ timeout: 25_000 });
   await shot(host, '11-guess');
   for (const p of everyone) await expect(p.page.getByTestId('reveal')).toBeVisible({ timeout: 30_000 });
-  await expect(host.page.getByTestId('distances').locator('.dist__auto')).toHaveCount(4);
+  await expect(host.page.getByTestId('distances').locator('.dist')).toHaveCount(4, { timeout: 8000 });
+  await expect(host.page.getByTestId('distances')).toContainText('auto');
   for (const p of everyone) await expect(p.page.getByTestId('scores')).toBeVisible({ timeout: 10_000 });
   await host.page.getByTestId('next-round').click();
 
@@ -163,7 +171,9 @@ test('four phones play a complete game, reconnect mid-round, then rematch', asyn
   await expect(host.page.getByTestId('winner-name')).toBeVisible();
   await expect(host.page.getByTestId('final-ranking')).toBeVisible();
   await expect(host.page.getByTestId('final-stats')).toBeVisible();
+  await expect(host.page.getByTestId('final-line')).toBeVisible();
   await expect(host.page.getByTestId('rematch')).toBeVisible();
+  await expect(host.page.getByTestId('share')).toBeVisible();
   await expect(yass.page.getByTestId('rematch')).toHaveCount(0);
   await shot(host, '12-final');
   await shot(adam, '12-final');
@@ -193,6 +203,7 @@ test('settings, share link and lobby leave', async ({ browser }) => {
 
   await host.page.goto('/create');
   await host.page.getByTestId('name-input').fill('Farouq');
+  await expect(host.page.getByRole('radio', { name: '15 s' })).toHaveCount(0); // options collapsed by default
   await host.page.getByTestId('create-submit').click();
   await host.page.getByTestId('open-room').click();
   const code = (await host.page.getByTestId('room-code').textContent())?.trim() ?? '';
@@ -221,4 +232,19 @@ test('settings, share link and lobby leave', async ({ browser }) => {
 
   await host.context.close();
   await friend.context.close();
+});
+
+test('first launch shows a three-card onboarding, once', async ({ browser }) => {
+  const p = await phone(browser, 'newbie', { onboarding: true });
+  await p.page.goto('/');
+  await expect(p.page.getByTestId('onboarding')).toBeVisible();
+  await p.page.getByTestId('onboarding-next').click();
+  await p.page.getByTestId('onboarding-next').click();
+  await expect(p.page.getByTestId('onboarding-next')).toHaveText("C'est parti");
+  await p.page.getByTestId('onboarding-next').click();
+  await expect(p.page.getByTestId('create-room')).toBeVisible();
+  await p.page.reload();
+  await expect(p.page.getByTestId('onboarding')).toHaveCount(0);
+  await expect(p.page.getByTestId('create-room')).toBeVisible();
+  await p.context.close();
 });

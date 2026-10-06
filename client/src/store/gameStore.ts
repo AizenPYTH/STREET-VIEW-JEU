@@ -17,7 +17,10 @@ interface GameState {
   /** The room we just left and why: 'closed' (server) or 'left' (on purpose). Blocks auto‑rejoin. */
   lastLeft: { code: string; reason: 'closed' | 'left' } | null;
   toast: TopToast | null;
+  /** Last "could not load locations" message, shown in the lobby until the next start. */
+  startError: string | null;
   setConnection(status: ConnectionStatus): void;
+  setStartError(message: string | null): void;
   applySnapshot(snapshot: RoomSnapshot): void;
   applyEvent(event: RoomEvent): void;
   leaveLocally(reason: 'closed' | 'left'): void;
@@ -33,13 +36,16 @@ export const useGameStore = create<GameState>((set, get) => ({
   snapshot: null,
   lastLeft: null,
   toast: null,
+  startError: null,
 
   setConnection: (connection) => set({ connection }),
+  setStartError: (startError) => set({ startError }),
 
   applySnapshot: (snapshot) => {
     const previous = get().snapshot;
     set({ snapshot, lastLeft: null });
     if (previous && previous.code === snapshot.code && previous.phase !== snapshot.phase) {
+      if (snapshot.phase === 'starting') set({ startError: null });
       if (snapshot.phase === 'guessing') {
         playSound('timeUp');
         haptic('medium');
@@ -87,7 +93,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         if (!isMe) playSound('tick');
         break;
       case 'gameStartFailed':
-        showToast('Impossible de charger des lieux. Réessaie.', 'muted', 2500);
         playSound('error');
         haptic('error');
         break;

@@ -1042,3 +1042,208 @@
   background: rgba(240, 122, 106, 0.14);
   color: var(--danger);
 }
+
+/* ───────────── Phase 2: timer attention tier ───────────── */
+.timer--warn {
+  border-color: var(--text);
+}
+
+/* ───────────── Phase 2: onboarding ───────────── */
+.onboarding {
+  position: absolute;
+  inset: 0;
+  z-index: 95;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: var(--screen-top) var(--screen-x) var(--screen-bottom);
+  animation: cg-in 0.25s both;
+}
+
+.onboarding__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.onboarding__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.onboarding__dot--on {
+  background: var(--accent);
+}
+
+.onboarding__card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+}
+
+.onboarding__emoji {
+  font-size: 72px;
+  line-height: 1;
+}
+
+/* ───────────── Phase 2: reveal extras ───────────── */
+.gmk__label {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, 4px);
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: var(--overlay);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.dist__cat {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.dist--winner {
+  border-color: var(--hot);
+  background: var(--hot-tint);
+}
+
+.dist__trophy {
+  font-size: 14px;
+}
+
+.round-winner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--hot-tint);
+  color: var(--hot);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: cg-pop 0.4s var(--ease) both;
+}
+
+/* ───────────── Phase 2: scores extras ───────────── */
+.score-row__total {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.overtake {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--accent-tint);
+  border: 1px solid var(--accent-tint-border);
+  font-size: 14px;
+  font-weight: 700;
+  animation: cg-pop 0.4s var(--ease) both;
+}
+
+.streak-pill--broken {
+  background: var(--surface-2);
+  color: var(--text-muted);
+}
+
+.me-line {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  animation: cg-up 0.4s var(--ease) both;
+}
+
+.me-line strong {
+  color: var(--text);
+}
+
+/* ───────────── Phase 2: lobby / starting extras ───────────── */
+.starting__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.options-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  width: 100%;
+}
+
+.options-toggle__value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.city-card__tagline {
+  position: relative;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.intro__tagline {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.waiting__status {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.prow__status--thinking {
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+.final__gap {
+  font-size: 15px;
+  color: var(--text-muted);
+}

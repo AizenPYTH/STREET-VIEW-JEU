@@ -59,7 +59,7 @@ describe('pickLocations', () => {
     expect(ok).toHaveLength(5);
 
     const dead: PanoResolver = { id: 'mock', resolve: async () => null };
-    await expect(pickLocations({ city, difficulty: 'normal', count: 5, resolver: dead })).rejects.toThrow(/Could not find enough/);
+    await expect(pickLocations({ city, difficulty: 'normal', count: 5, resolver: dead })).rejects.toThrow(/Impossible de trouver assez/);
   });
 
   it('rejects panoramas outside the city radius', async () => {

@@ -27,11 +27,17 @@ export function PlayerRow({ player, isMe, mode }: PlayerRowProps) {
           <span className="prow__status">Arrive</span>
         )
       ) : player.hasGuessed ? (
-        <span className="prow__check" aria-label="Guess verrouillé">
-          ✓
-        </span>
+        <>
+          <span className="prow__status prow__status--ready">verrouillé</span>
+          <span className="prow__check" aria-label="Guess verrouillé">
+            ✓
+          </span>
+        </>
       ) : (
-        <span className="prow__check prow__check--pending" aria-label="En attente" />
+        <>
+          <span className="prow__status prow__status--thinking">{player.connected ? 'réfléchit…' : 'reconnexion…'}</span>
+          <span className="prow__check prow__check--pending" aria-label="En attente" />
+        </>
       )}
     </li>
   );

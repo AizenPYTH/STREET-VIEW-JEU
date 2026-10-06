@@ -10,9 +10,10 @@ import {
   MAX_PLAYERS,
   MIN_NAME_LENGTH,
   MIN_PLAYERS_TO_START,
-  RESULTS_PHASE_MS,
   ROUND_OPTIONS,
   TIMINGS,
+  resultsDurationMs,
+  revealDurationMs,
   calculateScore,
   distanceBetween,
   getAvatar,
@@ -21,6 +22,7 @@ import {
   rankPlayers,
   winnersOf,
   type FinalResults,
+  type GameHighlights,
   type GameSettings,
   type GuessResult,
   type LatLng,
@@ -506,6 +508,7 @@ export class GameRoom {
 
     const before = rankPlayers(active.map((p) => ({ id: p.id, totalScore: p.totalScore, totalDistanceMeters: p.totalDistanceMeters })));
     const previousRank = new Map(before.map((e) => [e.playerId, e.rank]));
+    const previousStreak = new Map(active.map((p) => [p.id, p.streak]));
     const bestOfRound = Math.max(0, ...[...round.guesses.values()].map((g) => g.total));
 
     for (const player of active) {
@@ -536,6 +539,7 @@ export class GameRoom {
         totalScore: entry.totalScore,
         roundPoints: round.guesses.get(entry.playerId)?.total ?? 0,
         streak: player?.streak ?? 0,
+        previousStreak: previousStreak.get(entry.playerId) ?? 0,
         gapToLeader: leaderScore - entry.totalScore,
       };
     });
@@ -543,7 +547,7 @@ export class GameRoom {
     round.revealStartsAt = now + TIMINGS.revealAlignMs;
     this.playedLocations.push(round.location);
     this.deps.hooks?.roundRevealed?.(this, round);
-    this.setPhase('revealing', round.revealStartsAt + TIMINGS.reveal.totalMs);
+    this.setPhase('revealing', round.revealStartsAt + revealDurationMs(round.guesses.size));
     this.emitEvent('roundRevealed', null);
     this.schedule((this.phaseEndsAt ?? now) - now, () => this.showResults());
   }
@@ -552,9 +556,10 @@ export class GameRoom {
     const round = this.currentRound;
     if (!round || this.phase !== 'revealing') return;
     const now = this.deps.clock.now();
+    const duration = resultsDurationMs(round.standings?.length ?? this.activePlayers().length);
     round.resultsStartsAt = now;
-    this.setPhase('results', now + RESULTS_PHASE_MS);
-    this.schedule(RESULTS_PHASE_MS, () => this.advance());
+    this.setPhase('results', now + duration);
+    this.schedule(duration, () => this.advance());
   }
 
   private advance(): void {
@@ -578,11 +583,31 @@ export class GameRoom {
       bestRoundPoints: p.bestRoundPoints,
       maxStreak: p.maxStreak,
     }));
-    const final: FinalResults = { ranking, winnerIds: winnersOf(ranking), stats, startsAt: this.deps.clock.now() };
+    const final: FinalResults = { ranking, winnerIds: winnersOf(ranking), stats, highlights: this.computeHighlights(), startsAt: this.deps.clock.now() };
     this.final = final;
     this.setPhase('finished', null);
     this.deps.hooks?.gameFinished?.(this, final);
     this.emitEvent('gameFinished', null);
+  }
+
+  private computeHighlights(): GameHighlights {
+    let closest: GameHighlights['closest'] = null;
+    let fastest: GameHighlights['fastest'] = null;
+    for (const round of this.rounds) {
+      if (round.revealStartsAt === null) continue;
+      for (const guess of round.guesses.values()) {
+        if (guess.auto || !this.players.get(guess.playerId) || this.players.get(guess.playerId)?.left) continue;
+        if (!closest || guess.distanceMeters < closest.distanceMeters) {
+          closest = { playerId: guess.playerId, distanceMeters: guess.distanceMeters, roundNumber: round.index + 1 };
+        }
+        if (!fastest || guess.timeMs < fastest.timeMs) fastest = { playerId: guess.playerId, timeMs: guess.timeMs, roundNumber: round.index + 1 };
+      }
+    }
+    let streak: GameHighlights['streak'] = null;
+    for (const p of this.activePlayers()) {
+      if (p.maxStreak >= 2 && (!streak || p.maxStreak > streak.length)) streak = { playerId: p.id, length: p.maxStreak };
+    }
+    return { closest, fastest, streak };
   }
 
   /**

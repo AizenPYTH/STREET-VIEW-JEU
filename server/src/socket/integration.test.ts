@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { io as connect, type Socket } from 'socket.io-client';
-import { TIMINGS, type AckResult, type ClientToServerEvents, type RoomJoined, type RoomSnapshot, type ServerToClientEvents } from '@cityguess/shared';
+import { TIMINGS, resultsDurationMs, revealDurationMs, type AckResult, type ClientToServerEvents, type RoomJoined, type RoomSnapshot, type ServerToClientEvents } from '@cityguess/shared';
 import { createApp, type GameApp } from '../app.js';
 import { FakeClock } from '../game/clock.js';
 import { MockStreetViewResolver } from '../streetview/mock.js';
@@ -117,6 +117,11 @@ describe('socket transport', () => {
     expect(round.round?.panoId).toMatch(/^mock-/);
     expect(round.round?.reveal).toBeNull();
 
+    // Anti‑cheat (phase 2 §43): record everything the last guest receives before the reveal.
+    const wire: string[] = [];
+    const spy = guests[2]!;
+    spy.onAny((event, ...args) => wire.push(JSON.stringify([event, ...args])));
+
     for (let r = 0; r < 3; r++) {
       const everyone = [host, ...guests];
       await Promise.all(everyone.map((s) => request(s, (ack) => s.emit('game:panoReady', ack))));
@@ -129,6 +134,22 @@ describe('socket transport', () => {
       expect(revealed.round?.reveal?.results).toHaveLength(4);
       expect(revealed.round?.reveal?.standings).toHaveLength(4);
       expect(revealed.round?.reveal?.location.lat).toBeGreaterThan(48.8);
+      if (r === 0) {
+        // Nothing received before the reveal may contain the real location or the others' guesses.
+        const beforeReveal = wire.filter((frame) => !frame.includes('"revealing"'));
+        const secret = revealed.round!.reveal!.location;
+        expect(beforeReveal.length).toBeGreaterThan(3);
+        for (const frame of beforeReveal) {
+          expect(frame).not.toContain(secret.lat.toFixed(4));
+          expect(frame).not.toContain('"reveal":{');
+          expect(frame).not.toContain(String(48.85)); // Alex's guess latitude
+          expect(frame).not.toContain(String(48.851)); // Yass's
+        }
+        // Fake intents are refused: wrong phase, duplicate guess, forged score shape.
+        await expect(request(spy, (ack) => spy.emit('game:submitGuess', { position: { lat: 48.85, lng: 2.35 } }, ack))).rejects.toThrow(/TOO_LATE/);
+        await expect(request(spy, (ack) => spy.emit('game:nextRound', ack))).rejects.toThrow(/NOT_HOST|BAD_PHASE/);
+        await expect(request(spy, (ack) => spy.emit('game:submitGuess', { position: { lat: 'x', lng: 2 } } as never, ack))).rejects.toThrow(/INVALID_INPUT|TOO_LATE/);
+      }
       await expect(request(host, (ack) => host.emit('game:submitGuess', { position: { lat: 48.85, lng: 2.35 } }, ack))).rejects.toThrow(/TOO_LATE/);
 
       // Simulate a guest dropping and coming back during the reveal
@@ -145,13 +166,13 @@ describe('socket transport', () => {
         expect(restored.players.find((p) => p.name === 'Sam')?.totalScore).toBeGreaterThan(0);
       }
 
-      clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
+      clock.advance(TIMINGS.revealAlignMs + revealDurationMs(4));
       await nextState(host, (s) => s.phase === 'results');
       if (r < 2) {
         await request(host, (ack) => host.emit('game:nextRound', ack));
         await nextState(host, (s) => s.phase === 'round' && s.round?.index === r + 1);
       } else {
-        clock.advance(TIMINGS.results.leaderboardMs + TIMINGS.results.autoAdvanceMs);
+        clock.advance(resultsDurationMs(4));
       }
     }
     const final = await nextState(host, (s) => s.phase === 'finished');

@@ -167,6 +167,7 @@ export function PlayScreen({ snapshot }: { snapshot: RoomSnapshot }) {
               <span className="intro__city cg-pop">
                 {city.flag} {city.name}
               </span>
+              <span className="intro__tagline cg-up">{city.tagline}</span>
             </>
           )}
           {step >= 1 && step <= 3 && (

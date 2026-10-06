@@ -1,4 +1,4 @@
-import { RESULTS_PHASE_MS, TIMINGS, offsetLatLng, type City, type Difficulty, type LatLng, type RoomEvent } from '@cityguess/shared';
+import { TIMINGS, offsetLatLng, resultsDurationMs, revealDurationMs, type City, type Difficulty, type LatLng, type RoomEvent } from '@cityguess/shared';
 import { FakeClock } from './clock.js';
 import { GameRoom, type PlayerState } from './GameRoom.js';
 import type { LocationPicker, ResolvedLocation } from './locations.js';
@@ -79,7 +79,8 @@ export function enterExploration(h: Harness): void {
 
 /** Advances through reveal + results into the next phase. */
 export function skipRevealAndResults(h: Harness): void {
-  h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs + RESULTS_PHASE_MS);
+  const n = h.room.currentRound?.guesses.size ?? h.room.activePlayers().length;
+  h.clock.advance(TIMINGS.revealAlignMs + revealDurationMs(n) + resultsDurationMs(n));
 }
 
 export function eventTypes(h: Harness): string[] {

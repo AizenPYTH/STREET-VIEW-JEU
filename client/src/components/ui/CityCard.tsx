@@ -27,6 +27,7 @@ export function CityCard({ city, selected, onSelect }: { city: City; selected: b
       </div>
       <div>
         <div className="city-card__name">{city.name}</div>
+        <div className="city-card__tagline">{city.tagline}</div>
         <div className="city-card__difficulty">
           <span>{DIFFICULTY_WORD[city.stars]}</span>
           <span className="city-card__stars" aria-label={`${city.stars} sur 4`}>

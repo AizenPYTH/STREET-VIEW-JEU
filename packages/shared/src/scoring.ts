@@ -50,3 +50,29 @@ export function formatPoints(points: number): string {
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
 }
+
+export type GuessCategoryId = 'perfect' | 'sharp' | 'close' | 'near' | 'far';
+
+export interface GuessCategory {
+  id: GuessCategoryId;
+  /** Short French label shown on the reveal ("PARFAIT", "PRÉCIS"…). */
+  label: string;
+  emoji: string;
+}
+
+/**
+ * Memorable distance buckets (phase 2 §6). Few enough to read instantly.
+ * The +100 bonus still applies strictly under `perfectThresholdMeters` (200 m), i.e. PARFAIT and PRÉCIS.
+ */
+export function guessCategory(distanceMeters: number): GuessCategory {
+  if (distanceMeters < 50) return { id: 'perfect', label: 'Parfait', emoji: '🔥' };
+  if (distanceMeters < 200) return { id: 'sharp', label: 'Précis', emoji: '🎯' };
+  if (distanceMeters < 500) return { id: 'close', label: 'Proche', emoji: '👌' };
+  if (distanceMeters < 1500) return { id: 'near', label: 'Pas loin', emoji: '🙂' };
+  return { id: 'far', label: 'Loin', emoji: '🧭' };
+}
+
+/** Highest total a player can reach in a game (for comeback messaging). */
+export function maxRoundPoints(multiplier: number, config: ScoringConfig = DEFAULT_SCORING): number {
+  return config.maxScore * multiplier + config.perfectBonus;
+}

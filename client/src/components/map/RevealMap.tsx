@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import { useEffect, useMemo, useRef } from 'react';
-import { TIMINGS, type GuessResult, type LatLng, type PlayerPublic } from '@cityguess/shared';
+import { revealMarkerAt, TIMINGS, type GuessResult, type LatLng, type PlayerPublic } from '@cityguess/shared';
 import { animateDraw, createMap, guessMarkerIcon, truthMarkerIcon } from './leafletUtils';
 import { useSequence } from '../../hooks/useSequence';
 
@@ -12,19 +12,18 @@ interface RevealMapProps {
   revealStartsAt: number;
 }
 
-/** Scripted reveal on a real map (§20): truth at 500 ms, markers from 1100, lines from 1900. */
+/**
+ * Scripted reveal on a real map (phase 2 §4, §27): the real position lands first, then the
+ * players appear one by one from the farthest to the closest, each with its line, so the round
+ * winner is always the last to drop. The viewport follows every new point (40 px margin).
+ */
 export function RevealMap({ location, results, players, revealStartsAt }: RevealMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const addedRef = useRef<{ truth: boolean; markers: Set<number>; lines: Set<number> }>({ truth: false, markers: new Set(), lines: new Set() });
-  const { reveal } = TIMINGS;
-  const checkpoints = useMemo(() => {
-    const cps: number[] = [reveal.truthMs];
-    results.forEach((_, i) => {
-      cps.push(reveal.markersMs + i * reveal.markerStepMs, reveal.linesMs + i * reveal.markerStepMs);
-    });
-    return cps;
-  }, [results, reveal]);
+  const addedRef = useRef<{ truth: boolean; players: Set<string> }>({ truth: false, players: new Set() });
+  /** Reveal order: farthest first. */
+  const order = useMemo(() => [...results].sort((a, b) => b.distanceMeters - a.distanceMeters), [results]);
+  const checkpoints = useMemo(() => [TIMINGS.reveal.truthMs, ...order.map((_, i) => revealMarkerAt(i))], [order]);
   const elapsed = useSequence(revealStartsAt, checkpoints);
 
   useEffect(() => {
@@ -33,7 +32,7 @@ export function RevealMap({ location, results, players, revealStartsAt }: Reveal
     const map = createMap(container);
     map.setView([location.lat, location.lng], 14, { animate: false });
     mapRef.current = map;
-    addedRef.current = { truth: false, markers: new Set(), lines: new Set() };
+    addedRef.current = { truth: false, players: new Set() };
     const resize = (): void => {
       map.invalidateSize();
     };
@@ -53,35 +52,35 @@ export function RevealMap({ location, results, players, revealStartsAt }: Reveal
     if (!map) return;
     const byId = new Map(players.map((p) => [p.id, p]));
     const added = addedRef.current;
-    if (elapsed >= reveal.truthMs && !added.truth) {
+    if (elapsed >= TIMINGS.reveal.truthMs && !added.truth) {
       added.truth = true;
       L.marker([location.lat, location.lng], { icon: truthMarkerIcon(), zIndexOffset: 1000, interactive: false }).addTo(map);
     }
-    let fit = false;
-    results.forEach((r, i) => {
+    let changed = false;
+    order.forEach((r, i) => {
+      if (elapsed < revealMarkerAt(i) || added.players.has(r.playerId)) return;
+      added.players.add(r.playerId);
+      changed = true;
       const player = byId.get(r.playerId);
-      if (elapsed >= reveal.markersMs + i * reveal.markerStepMs && !added.markers.has(i)) {
-        added.markers.add(i);
-        L.marker([r.position.lat, r.position.lng], { icon: guessMarkerIcon(player?.avatar ?? 'diamond', { pop: true, small: true }), interactive: false }).addTo(map);
-        fit = true;
-      }
-      if (elapsed >= reveal.linesMs + i * reveal.markerStepMs && !added.lines.has(i)) {
-        added.lines.add(i);
-        const line = L.polyline(
-          [
-            [r.position.lat, r.position.lng],
-            [location.lat, location.lng],
-          ],
-          { color: player?.color ?? '#fff', weight: 3, opacity: 0.85, className: 'cg-line', interactive: false },
-        ).addTo(map);
-        animateDraw(line, 600);
-      }
+      L.marker([r.position.lat, r.position.lng], {
+        icon: guessMarkerIcon(player?.avatar ?? 'diamond', { pop: true, small: true, label: player?.name ?? '' }),
+        interactive: false,
+        zIndexOffset: 500 - i,
+      }).addTo(map);
+      const line = L.polyline(
+        [
+          [r.position.lat, r.position.lng],
+          [location.lat, location.lng],
+        ],
+        { color: player?.color ?? '#fff', weight: 3, opacity: 0.85, className: 'cg-line', interactive: false },
+      ).addTo(map);
+      animateDraw(line, 500);
     });
-    if (fit) {
-      const points: L.LatLngExpression[] = [[location.lat, location.lng], ...results.filter((_, i) => added.markers.has(i)).map((r) => [r.position.lat, r.position.lng] as L.LatLngExpression)];
-      map.flyToBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16, duration: 0.5 });
+    if (changed) {
+      const points: L.LatLngExpression[] = [[location.lat, location.lng], ...order.filter((r) => added.players.has(r.playerId)).map((r) => [r.position.lat, r.position.lng] as L.LatLngExpression)];
+      map.flyToBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 16, duration: 0.45 });
     }
-  }, [elapsed, results, players, location, reveal]);
+  }, [elapsed, order, players, location]);
 
   return <div ref={containerRef} className="reveal__map" data-testid="reveal-map" />;
 }

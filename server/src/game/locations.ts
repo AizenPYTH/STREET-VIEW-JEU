@@ -55,10 +55,23 @@ function shuffle<T>(items: readonly T[], rng: () => number): T[] {
  * against the city radius, previously chosen points and excluded (recently played) points.
  */
 export async function pickLocations(options: PickLocationsOptions): Promise<ResolvedLocation[]> {
-  const { city, difficulty, count, resolver } = options;
+  const { city, difficulty } = options;
+  try {
+    return await pickFromZones(options, zonesForDifficulty(city, difficulty));
+  } catch (error) {
+    // Street View coverage can be thin in the zones of one difficulty: fall back to the whole city
+    // rather than blocking the game (phase 2 §41). Exclusions are relaxed too, they are only a nicety.
+    const allZones = city.zones;
+    if (allZones.length === zonesForDifficulty(city, difficulty).length && !options.exclude?.length) throw error;
+    return pickFromZones({ ...options, exclude: [] }, allZones);
+  }
+}
+
+async function pickFromZones(options: PickLocationsOptions, candidateZones: readonly CityZone[]): Promise<ResolvedLocation[]> {
+  const { city, count, resolver } = options;
   const rng = options.rng ?? Math.random;
   const exclude = options.exclude ?? [];
-  const zones = shuffle(zonesForDifficulty(city, difficulty), rng);
+  const zones = shuffle(candidateZones, rng);
   if (zones.length === 0) throw new GameError('LOCATIONS_UNAVAILABLE', `${city.name} has no zones configured`);
 
   const isAcceptable = (candidate: LatLng, accepted: readonly ResolvedLocation[]): boolean => {
@@ -99,7 +112,7 @@ export async function pickLocations(options: PickLocationsOptions): Promise<Reso
     if (!replacement) {
       throw new GameError(
         'LOCATIONS_UNAVAILABLE',
-        `Could not find enough Street View locations in ${city.name}. Try another city or difficulty.`,
+        `Impossible de trouver assez de lieux Street View à ${city.name}. Essaie une autre ville ou difficulté.`,
       );
     }
     accepted.push(replacement);

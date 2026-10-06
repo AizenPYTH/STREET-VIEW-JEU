@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../components/ui/Logo';
+import { Onboarding } from '../components/Onboarding';
 import { Button } from '../components/ui/Button';
 import { IconButton } from '../components/ui/IconButton';
 import { GearIcon } from '../components/ui/Icons';
@@ -10,6 +12,20 @@ export function HomeScreen() {
   const navigate = useNavigate();
   const snapshot = useGameStore((s) => s.snapshot);
   const lastRoom = snapshot?.code ?? storage.getLastRoom();
+  const [onboarding, setOnboarding] = useState(() => !storage.hasSeenOnboarding());
+
+  if (onboarding) {
+    return (
+      <div className="screen" data-testid="home">
+        <Onboarding
+          onDone={() => {
+            storage.setSeenOnboarding();
+            setOnboarding(false);
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="screen" data-testid="home">

@@ -20,12 +20,13 @@ export function createMap(container: HTMLElement, options: L.MapOptions = {}): L
 }
 
 /** Player marker: the avatar's shape and colour (the host's diamond is the brand mark). */
-export function guessMarkerIcon(avatar: string, options: { ring?: boolean; pop?: boolean; small?: boolean } = {}): L.DivIcon {
+export function guessMarkerIcon(avatar: string, options: { ring?: boolean; pop?: boolean; small?: boolean; label?: string } = {}): L.DivIcon {
   const def = getAvatar(avatar);
   const classes = ['gmk', options.pop ? 'gmk--pop' : '', options.small ? 'gmk--sm' : ''].filter(Boolean).join(' ');
+  const label = options.label ? `<span class="gmk__label">${escapeHtml(options.label)}</span>` : '';
   return L.divIcon({
     className: 'cg-marker',
-    html: `<div class="${classes}" style="--gmk-color:${def.color}"><span class="gmk__shape gmk__shape--${def.shape}"></span><span class="gmk__dot"></span>${options.ring ? '<span class="gmk__ring"></span>' : ''}</div>`,
+    html: `<div class="${classes}" style="--gmk-color:${def.color}"><span class="gmk__shape gmk__shape--${def.shape}"></span><span class="gmk__dot"></span>${options.ring ? '<span class="gmk__ring"></span>' : ''}${label}</div>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
@@ -51,4 +52,8 @@ export function animateDraw(line: L.Polyline, durationMs = 600): void {
   void path.getBoundingClientRect();
   path.style.transition = `stroke-dashoffset ${durationMs}ms cubic-bezier(.2,.8,.2,1)`;
   path.style.strokeDashoffset = '0';
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch] ?? ch);
 }

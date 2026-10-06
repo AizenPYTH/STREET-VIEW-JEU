@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
-import { offsetLatLng, RESULTS_PHASE_MS, TIMINGS } from '@cityguess/shared';
+import { offsetLatLng, TIMINGS, resultsDurationMs, revealDurationMs } from '@cityguess/shared';
 import { runMigrations } from './migrate.js';
 import { PostgresPersistence } from './postgres.js';
 import { FakeClock } from '../game/clock.js';
@@ -56,7 +56,7 @@ describeDb('PostgresPersistence (requires TEST_DATABASE_URL)', () => {
       room.submitGuess(alex.id, offsetLatLng(real, 10, 0));
       if (r < 2) room.submitGuess(yass.id, offsetLatLng(real, 900, 1));
       else clock.advance(30_000 + TIMINGS.guessMs);
-      clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs + RESULTS_PHASE_MS);
+      clock.advance(TIMINGS.revealAlignMs + revealDurationMs(2) + resultsDurationMs(2));
     }
     expect(room.phase).toBe('finished');
     persistence.roomClosed(room);

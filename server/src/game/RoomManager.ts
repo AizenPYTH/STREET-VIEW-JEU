@@ -1,4 +1,4 @@
-import { ROOM_IDLE_TTL_MS, ROOM_MAX_AGE_MS, generateRoomCode, type RoomEvent } from '@cityguess/shared';
+import { ROOM_IDLE_TTL_MS, ROOM_MAX_AGE_MS, generateRoomCode, type LatLng, type RoomEvent } from '@cityguess/shared';
 import type { Clock } from './clock.js';
 import { GameError } from './errors.js';
 import { GameRoom, type RoomHooks } from './GameRoom.js';
@@ -15,12 +15,24 @@ export interface RoomManagerDeps {
   rng?: () => number;
 }
 
+/** Locations played recently anywhere on this server are avoided by every room (anti‑repetition). */
+const RECENT_LOCATIONS_MAX = 300;
+
 /** Owns every live room and the token → room index used for reconnection. */
 export class RoomManager {
   private readonly rooms = new Map<string, GameRoom>();
   private readonly roomByToken = new Map<string, string>();
+  private readonly recentLocations: LatLng[] = [];
 
   constructor(private readonly deps: RoomManagerDeps) {}
+
+  /** Wraps the picker so rooms also avoid locations played recently in other rooms. */
+  private pickLocations: LocationPicker = async (city, difficulty, count, exclude) => {
+    const picked = await this.deps.pickLocations(city, difficulty, count, [...exclude, ...this.recentLocations]);
+    for (const loc of picked) this.recentLocations.push(loc.location);
+    if (this.recentLocations.length > RECENT_LOCATIONS_MAX) this.recentLocations.splice(0, this.recentLocations.length - RECENT_LOCATIONS_MAX);
+    return picked;
+  };
 
   get size(): number {
     return this.rooms.size;
@@ -35,7 +47,7 @@ export class RoomManager {
     }
     const room = new GameRoom(code, {
       clock: this.deps.clock,
-      pickLocations: this.deps.pickLocations,
+      pickLocations: this.pickLocations,
       onStateChanged: this.deps.onStateChanged,
       onEvent: this.deps.onEvent,
       onEmpty: (r) => this.closeRoom(r, 'Tout le monde a quitté la room'),

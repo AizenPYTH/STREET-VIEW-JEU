@@ -114,7 +114,8 @@ Les migrations SQL reproductibles sont dans [`db/migrations`](db/migrations). Sc
 - **Moteur (server)** : partie complète à 4, solo et à 8, blocage tant que tout le monde n'est pas PRÊT, démarrage synchronisé du timer (attente des vues rue, max 4 s), guess auto au centre à l'expiration, guesses en retard / doublons / invalides, secret de la position avant révélation, déconnexion (retrait après 20 s, retour possible), transfert d'hôte, départ en cours de partie, revanche et nouvelle ville, échec de chargement des lieux, sélection des lieux (zones, séparation, exclusions), parsing de l'API Google.
 - **Transport (server)** : 4 vrais sockets, reconnexion, erreurs explicites, config publique sans secret.
 - **Persistance (server)** : migrations + écritures réelles sur Postgres + vérification RLS (`TEST_DATABASE_URL=postgres://… npm test -w server`).
-- **E2E (Playwright, Chromium, viewport iPhone)** : 4 appareils → créer, rejoindre au clavier, lobby PRÊT, intro, manche, guess anticipé, rechargement en pleine manche, révélation scriptée, scores, auto‑guess, dernière manche doublée, final, revanche ; réglages, lien d'invitation, départ de l'hôte.
+- **E2E (Playwright, Chromium, viewport iPhone)** : 4 appareils → créer, rejoindre au clavier, lobby PRÊT, intro, manche, guess anticipé, rechargement en pleine manche, révélation scriptée (joueurs un par un, gagnant de manche), scores animés, auto‑guess, dernière manche doublée, final, revanche ; réglages, lien d'invitation, départ de l'hôte ; onboarding du premier lancement.
+- **Google réel** (nécessite une clé) : `GOOGLE_MAPS_SERVER_KEY=… node scripts/validate-streetview.mjs marseille paris london tokyo new-york` mesure la couverture et la latence de chaque zone ; `GOOGLE_MAPS_API_KEY=… npx playwright test e2e/google.spec.ts` rend un panorama navigable dans cinq villes.
 
 ```bash
 npm test
@@ -143,10 +144,11 @@ Points clés :
 
 - 2 à 8 joueurs, capacité choisie à la création ; 3, 5 ou 10 manches ; 15/30/45/60 s d'exploration ; 20 s pour placer le marqueur.
 - `points = round(1000 × e^(−d / 1400))` (d en mètres) : 0 m = 1000, 500 m ≈ 700, 1 km ≈ 490, 2 km ≈ 240, 5 km ≈ 28.
-- Guess parfait (< 200 m) : **+100** affiché à part puis additionné.
-- Dernière manche : courbe ×2 (option « Dernière manche ×2 »).
+- Bonus **+100** strictement sous 200 m (catégories affichées : 🔥 Parfait < 50 m, 🎯 Précis < 200 m, 👌 Proche < 500 m, 🙂 Pas loin < 1,5 km, 🧭 Loin).
+- Dernière manche : courbe ×2 (option « Dernière manche ×2 »). Maximum 1 100 par manche, 2 100 en finale.
 - Timer à 0 sans marqueur : guess automatique au centre de la ville (tag « auto »), jamais 0 par défaut.
-- Classement par total décroissant, égalité départagée par distance cumulée. Flèches de mouvement vs la manche précédente, écart au leader, série (manches consécutives au meilleur score).
+- Classement par total décroissant, égalité départagée par distance cumulée. Flèches de mouvement, « X dépasse Y », écart au leader, série (manches consécutives au meilleur score) et « Série perdue ».
+- Équilibre vérifié par simulation (`packages/shared/src/balance.test.ts`) : un expert gagne ~92 % contre des profils plus faibles, un second à moins de 600 pts avant la finale gagne ~27 %, égalités ~0 %. Détails dans [`docs/PHASE2_HANDOFF.md`](docs/PHASE2_HANDOFF.md).
 
 ## Sécurité et anti‑triche
 
@@ -172,6 +174,10 @@ Client hébergé séparément (Vercel/Netlify) : build avec `VITE_SERVER_URL=htt
 ## Ajouter une ville
 
 Ajoute une entrée dans `packages/shared/src/cities.ts` : nom, pays, drapeau, centre, `bounds` (vue initiale de la carte), `maxRadiusMeters`, `hue` (teinte de la carte ville), `stars` (1–4) et des zones `z('Quartier', lat, lng, rayon, difficulté)` pour chaque niveau. Les tests vérifient automatiquement la cohérence (zones dans les limites, chaque difficulté couverte). Aucune modification du moteur n'est nécessaire.
+
+## Phase 2 — game feel
+
+Le document [`docs/PHASE2_HANDOFF.md`](docs/PHASE2_HANDOFF.md) décrit l'audit, la révélation en suspense (joueurs du plus loin au plus proche, gagnant de manche), les scores animés, les dépassements et séries, les quatre paliers du timer, l'onboarding, les états vides, l'image de partage 1080×1920 et la vérification d'équilibre du barème.
 
 ## Limites connues
 

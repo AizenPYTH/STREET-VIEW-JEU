@@ -22,6 +22,8 @@ export interface City {
   bounds: [number, number, number, number];
   /** Sanity limit: a resolved panorama further than this from the center is rejected. */
   maxRadiusMeters: number;
+  /** One short line of personality shown on the card and the round intro ("Méditerranée"). */
+  tagline: string;
   /** oklch hue of the city card gradient (design handoff §16). */
   hue: number;
   /** Difficulty rating shown on the city card, 1–4 stars. */
@@ -39,6 +41,7 @@ const z = (name: string, lat: number, lng: number, radiusMeters: number, difficu
 export const CITIES: readonly City[] = [
   {
     id: 'marseille',
+    tagline: 'Méditerranée',
     hue: 60,
     stars: 2,
     name: 'Marseille',
@@ -73,6 +76,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'paris',
+    tagline: 'Ville Lumière',
     hue: 300,
     stars: 2,
     name: 'Paris',
@@ -112,6 +116,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'lyon',
+    tagline: 'Entre Rhône et Saône',
     hue: 130,
     stars: 3,
     name: 'Lyon',
@@ -143,6 +148,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'nice',
+    tagline: 'Baie des Anges',
     hue: 80,
     stars: 3,
     name: 'Nice',
@@ -174,6 +180,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'london',
+    tagline: 'Brique et Tamise',
     hue: 240,
     stars: 3,
     name: 'London',
@@ -214,6 +221,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'barcelona',
+    tagline: 'Eixample et mer',
     hue: 40,
     stars: 2,
     name: 'Barcelona',
@@ -249,6 +257,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'rome',
+    tagline: 'Ville éternelle',
     hue: 90,
     stars: 2,
     name: 'Rome',
@@ -287,6 +296,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'berlin',
+    tagline: 'Béton et graffiti',
     hue: 170,
     stars: 4,
     name: 'Berlin',
@@ -325,6 +335,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'new-york',
+    tagline: 'Grille et gratte-ciel',
     hue: 200,
     stars: 3,
     name: 'New York',
@@ -366,6 +377,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'los-angeles',
+    tagline: 'Palmiers et boulevards',
     hue: 330,
     stars: 4,
     name: 'Los Angeles',
@@ -406,6 +418,7 @@ export const CITIES: readonly City[] = [
   },
   {
     id: 'tokyo',
+    tagline: 'Néons et ruelles',
     hue: 20,
     stars: 4,
     name: 'Tokyo',

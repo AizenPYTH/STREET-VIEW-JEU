@@ -31,6 +31,7 @@ export function CreateScreen() {
   const navigate = useNavigate();
   const [profile, setProfile] = useProfile();
   const [settings, setSettings] = useState<GameSettings>({ ...DEFAULT_SETTINGS });
+  const [showOptions, setShowOptions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,6 +98,14 @@ export function CreateScreen() {
           <span className="t-label">Mode</span>
           <ChipGroup ariaLabel="Mode" options={MODES} value="classic" onChange={() => undefined} />
         </div>
+        <button type="button" className="options-toggle" aria-expanded={showOptions} onClick={() => setShowOptions((v) => !v)} data-testid="toggle-options">
+          <span>Options de la partie</span>
+          <span className="options-toggle__value">
+            {settings.capacity} joueurs · {settings.rounds} manches · {settings.exploreSeconds} s {showOptions ? '▴' : '▾'}
+          </span>
+        </button>
+        {showOptions && (
+          <>
         <div className="form__section">
           <span className="t-label">Joueurs</span>
           <ChipGroup ariaLabel="Joueurs" fill small options={CAPACITY_OPTIONS.map((c) => ({ value: c, label: String(c) }))} value={settings.capacity} onChange={(capacity) => setSettings({ ...settings, capacity })} />
@@ -114,6 +123,8 @@ export function CreateScreen() {
           <ChipGroup ariaLabel="Difficulté" fill small options={DIFFICULTIES.map((d) => ({ value: d, label: DIFFICULTY_LABELS[d].label }))} value={settings.difficulty} onChange={(difficulty) => setSettings({ ...settings, difficulty })} />
         </div>
         <Toggle label="Dernière manche ×2" hint="Points doublés pour la finale" on={settings.doubleFinal} onChange={(doubleFinal) => setSettings({ ...settings, doubleFinal })} />
+          </>
+        )}
         <button type="submit" className="visually-hidden" tabIndex={-1} aria-hidden="true" />
       </form>
       <div className="screen__footer">

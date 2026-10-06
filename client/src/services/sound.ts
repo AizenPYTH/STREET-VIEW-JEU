@@ -20,6 +20,10 @@ export type SoundName =
   | 'perfect'
   | 'victory'
   | 'defeat'
+  | 'overtake'
+  | 'roundWinner'
+  | 'closeGuess'
+  | 'countUp'
   | 'error';
 
 let ctx: AudioContext | null = null;
@@ -120,6 +124,17 @@ const SOUNDS: Record<SoundName, (c: AudioContext, t: number) => void> = {
     tone(c, 392, t, 0.4, { type: 'triangle', gain: 0.1 });
     tone(c, 311, t + 0.25, 0.6, { type: 'triangle', gain: 0.1 });
   },
+  overtake: (c, t) => {
+    tone(c, 660, t, 0.08, { type: 'square', gain: 0.08 });
+    tone(c, 990, t + 0.08, 0.14, { type: 'square', gain: 0.08 });
+    noise(c, t, 0.25, 0.06, 800, 5000);
+  },
+  roundWinner: (c, t) => {
+    tone(c, 784, t, 0.12, { type: 'triangle', gain: 0.12 });
+    tone(c, 1175, t + 0.12, 0.3, { type: 'triangle', gain: 0.12 });
+  },
+  closeGuess: (c, t) => tone(c, 1568, t, 0.12, { type: 'sine', gain: 0.1, slideTo: 2093 }),
+  countUp: (c, t) => tone(c, 900 + Math.random() * 300, t, 0.025, { type: 'square', gain: 0.025 }),
   error: (c, t) => tone(c, 200, t, 0.18, { type: 'sawtooth', gain: 0.07, slideTo: 120 }),
 };
 

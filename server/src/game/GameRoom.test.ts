@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RESULTS_PHASE_MS, TIMINGS, calculateScore, distanceBetween, offsetLatLng, requireCity } from '@cityguess/shared';
+import { TIMINGS, calculateScore, distanceBetween, offsetLatLng, requireCity, resultsDurationMs, revealDurationMs } from '@cityguess/shared';
 import { GameError } from './errors.js';
 import { addPlayers, createHarness, enterExploration, eventTypes, skipRevealAndResults, startAndEnterRound } from './testUtils.js';
 
@@ -126,7 +126,7 @@ describe('game flow', () => {
     expect(h.room.phase).toBe('guessing');
     h.room.submitGuess(adam!.id, guesses[3][1]);
     expect(h.room.phase).toBe('revealing');
-    expect(h.room.phaseEndsAt).toBe(h.clock.now() + TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
+    expect(h.room.phaseEndsAt).toBe(h.clock.now() + TIMINGS.revealAlignMs + revealDurationMs(4));
 
     const reveal = h.room.snapshotFor(alex!.id).round?.reveal;
     expect(reveal?.location).toEqual(real);
@@ -144,13 +144,14 @@ describe('game flow', () => {
     const alexR1 = calculateScore(distanceBetween(real, guesses[0][1])).total;
     expect(alexR1).toBe(993 + 100);
     expect(reveal?.standings.map((s) => s.rank)).toEqual([1, 2, 3, 4]);
-    expect(reveal?.standings[0]).toMatchObject({ playerId: alex!.id, previousRank: null, streak: 1, gapToLeader: 0 });
+    expect(reveal?.standings[0]).toMatchObject({ playerId: alex!.id, previousRank: null, streak: 1, previousStreak: 0, gapToLeader: 0 });
     expect(reveal?.standings[1]?.gapToLeader).toBe(alexR1 - calculateScore(distanceBetween(real, guesses[1][1])).total);
 
-    h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
+    h.clock.advance(TIMINGS.revealAlignMs + revealDurationMs(4));
     expect(h.room.phase).toBe('results');
     expect(h.room.snapshotFor(alex!.id).round?.reveal?.resultsStartsAt).toBe(h.clock.now());
-    h.clock.advance(RESULTS_PHASE_MS);
+    expect(h.room.phaseEndsAt).toBe(h.clock.now() + resultsDurationMs(4));
+    h.clock.advance(resultsDurationMs(4));
     expect(h.room.phase).toBe('round');
     expect(h.room.currentRoundIndex).toBe(1);
     expect(h.room.snapshotFor(alex!.id).players.every((p) => !p.hasGuessed && !p.panoReady)).toBe(true);
@@ -171,7 +172,7 @@ describe('game flow', () => {
     expect(auto?.standings.filter((s) => s.playerId !== alex!.id).every((s) => s.streak === 1)).toBe(true);
     expect(auto?.standings[1]?.previousRank).toBe(2);
 
-    h.clock.advance(TIMINGS.revealAlignMs + TIMINGS.reveal.totalMs);
+    h.clock.advance(TIMINGS.revealAlignMs + revealDurationMs(h.room.activePlayers().length));
     expect(() => h.room.nextRound(yass!.id)).toThrow(/hôte/);
     h.room.nextRound(alex!.id);
     expect(h.room.currentRoundIndex).toBe(2);
@@ -197,6 +198,10 @@ describe('game flow', () => {
     expect(final.stats.find((s) => s.playerId === adam!.id)?.maxStreak).toBe(2); // tied best in round 2, best in round 3
     expect(final.stats.find((s) => s.playerId === alex!.id)?.bestGuessMeters).toBeCloseTo(10, 0);
     expect(final.stats.find((s) => s.playerId === alex!.id)?.bestRoundPoints).toBe(alexR1);
+    expect(final.highlights.closest?.playerId).toBe(adam?.id);
+    expect(final.highlights.closest?.roundNumber).toBe(3);
+    expect(final.highlights.fastest?.playerId).toBeDefined();
+    expect(final.highlights.streak?.length).toBe(2); // Alex (R1+R2) and Adam (R2+R3) both reached 2
     expect(eventTypes(h)).toContain('gameFinished');
   });
 

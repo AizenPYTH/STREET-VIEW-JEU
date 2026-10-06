@@ -11,9 +11,10 @@ interface TimerProps {
 export function Timer({ seconds, variant, held = false }: TimerProps) {
   const danger = !held && seconds <= TIMINGS.timerDangerAt;
   const hot = !held && !danger && seconds <= TIMINGS.timerHotAt;
+  const warn = !held && !danger && !hot && seconds <= TIMINGS.timerWarnAt;
   return (
     <div
-      className={`timer timer--${variant} ${hot ? 'timer--hot' : ''} ${danger ? 'timer--danger' : ''}`}
+      className={`timer timer--${variant} ${warn ? 'timer--warn' : ''} ${hot ? 'timer--hot' : ''} ${danger ? 'timer--danger' : ''}`}
       role="timer"
       aria-live={seconds === 10 || seconds === 5 ? 'polite' : 'off'}
       aria-label={`${seconds} secondes`}
